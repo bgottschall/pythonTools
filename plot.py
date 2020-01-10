@@ -10,13 +10,31 @@ import colour
 import subprocess
 import shutil
 
+range = [[None, None], [None, None]]
+
 
 def isFloat(val):
+    if val is None:
+        return False
     try:
         float(val)
         return True
     except ValueError:
         return False
+
+
+def updateRange(dataList):
+    global range
+    if not range:
+        range = []
+    if len(range) < len(dataList):
+        range.extend([None, None] * (len(dataList) - len(range)))
+    for index, data in enumerate(dataList):
+        if data is not None:
+            scope = [x for x in data if isFloat(x)]
+            if len(scope) > 0:
+                range[index][0] = min(scope) if range[index][0] is None else min(range[index][0], min(scope))
+                range[index][1] = max(scope) if range[index][1] is None else max(range[index][1], max(scope))
 
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
@@ -29,6 +47,7 @@ parser.add_argument("--separator", help="data delimiter", type=str)
 parser.add_argument("--no-index", action="store_true", help="data has no index column", default=False)
 parser.add_argument("--transpose", action="store_true", help="transpose data", default=False)
 parser.add_argument("--sort", action="store_true", help="sort the index or columns (for box and violin plot)", default=False)
+parser.add_argument("--sort-files", action="store_true", help="sort input files", default=False)
 parser.add_argument("--sort-column", type=int, help="sort after column (only compatible with line and bar plot)", default=0)
 parser.add_argument("--descending", action="store_true", help="sort descending", default=False)
 
@@ -47,9 +66,14 @@ parser.add_argument("--boxes", action="store_true", help="produce a box chart", 
 parser.add_argument("--boxmode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
 parser.add_argument("--rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode", default='normal')
 
+parser.add_argument("--line-width", type=int, help="define line width", default=1)
+parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#333333')
 parser.add_argument("--horizontal", action="store_true", help="horizontal chart", default=False)
 parser.add_argument("--vertical", action="store_true", help="vertical chart", default=False)
-parser.add_argument("--line-width", type=int, help="define line width", default=1)
+parser.add_argument("--x-range-from", type=float, help="x-axis start", default=None)
+parser.add_argument("--x-range-to", type=float, help="x-axis end", default=None)
+parser.add_argument("--y-range-from", type=float, help="x-axis start", default=None)
+parser.add_argument("--y-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--x-title", help="x-axis title", default=None)
 parser.add_argument("--y-title", help="y-axis title", default=None)
 parser.add_argument("--font-size", type=int, help="font size", default=12)
@@ -67,6 +91,12 @@ parser.add_argument("--legend-y", type=float, help="y legend position (-2 to 3)"
 parser.add_argument("--legend-hide", action="store_true", help="hide legend", default=False)
 parser.add_argument("--legend-vertical", action="store_true", help="horizontal legend", default=False)
 parser.add_argument("--legend-horizontal", action="store_true", help="vertical legend", default=False)
+
+parser.add_argument("--margin-l", type=int, help="sets left margin", default=None)
+parser.add_argument("--margin-r", type=int, help="sets right margin", default=None)
+parser.add_argument("--margin-t", type=int, help="sets top margin", default=None)
+parser.add_argument("--margin-b", type=int, help="sets bottom margin", default=None)
+parser.add_argument("--margin-pad", type=int, help="sets padding", default=None)
 
 parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
@@ -231,6 +261,9 @@ for sFilename in args.files:
     traceCount += pFrame.shape[1]
     dataFrames.append({'name': pName, 'file': sFilename, 'frame': pFrame})
 
+if (args.sort_files):
+    dataFrames.sort(key=lambda x: x['frame'].mean().mean(), reverse=args.descending)
+
 # Building up the colour array
 requiredColours = traceCount if args.per_trace_colour else len(dataFrames)
 colours = [colour.Color(c) for c in args.colour] if args.colour else list(colour.Color(args.colour_from).range_to(colour.Color(args.colour_to), requiredColours))
@@ -245,8 +278,7 @@ else:
     plotScriptName = args.save_script
     plotScript = open(plotScriptName, 'w+')
 
-plotScript.write("""
-#!/usr/bin/env python
+plotScript.write("""#!/usr/bin/env python
 import plotly
 import plotly.graph_objects as go
 """)
@@ -303,6 +335,9 @@ plotScript.write("fig = go.Figure()\n\n")
 if args.lines:
     for dataFrame in dataFrames:
         for col in dataFrame['frame'].columns:
+            ydata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
+            xdata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
+            updateRange([xdata, ydata])
             plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='{col}',
@@ -310,8 +345,8 @@ fig.add_trace(go.Scatter(
     legendgroup='{col}',
     line_color='{colours[colourIndex % len(colours)].hex}',
     line_width={args.line_width},
-    y={list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)},
-    x={list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)},
+    y={ydata},
+    x={xdata},
 ))
 """)
             colourIndex += 1 if args.per_trace_colour else 0
@@ -319,35 +354,47 @@ fig.add_trace(go.Scatter(
 elif args.bars:
     for dataFrame in dataFrames:
         for col in dataFrame['frame'].columns:
+            fillcolour = colours[colourIndex % len(colours)]
+            markercolour = colour.Color(args.line_colour)
+            ydata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
+            xdata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
+            updateRange([xdata, ydata])
+
             plotScript.write(f"""
 fig.add_trace(go.Bar(
     name='{col}',
     legendgroup='{col}',
     orientation='{'v' if args.vertical else 'h'}',
-    marker_color='{colours[colourIndex % len(colours)].hex}',
+    marker_color='{fillcolour}',
     marker_line_width={args.line_width},
-    y={list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)},
-    x={list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)},
+    marker_line_color='{markercolour}',
+    y={ydata},
+    x={xdata},
 ))
 """)
             colourIndex += 1 if args.per_trace_colour else 0
         colourIndex += 1 if args.per_dataset_colour else 0
+    plotScript.write(f"fig.update_layout(barmode='{args.barmode}')\n")
 elif args.boxes:
     traceIndex = 0
     for dataFrame in dataFrames:
         showLegend = True if len(dataFrames) > 1 else False
         for col in dataFrame['frame'].columns:
-            data = list(dataFrame['frame'][col])
+            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
             index = f"['{col}'] * {len(data)}"
+            ydata = index if not args.vertical else data
+            xdata = index if args.vertical else data
+            updateRange([xdata, ydata])
+
             fillcolour = colours[colourIndex % len(colours)]
-            markercolour = list(fillcolour.range_to(colour.Color("black"), 8))[1]
+            markercolour = colour.Color(args.line_colour)
             plotScript.write(f"""
 fig.add_trace(go.Box(
     name='{dataFrame['name']}',
     legendgroup='{dataFrame['name']}',
     showlegend={showLegend},
-    y={index if not args.vertical else data},
-    x={index if args.vertical else data},
+    y={ydata},
+    x={xdata},
     boxpoints=False,
     boxmean=True,
     fillcolor='{fillcolour.hex}',
@@ -369,23 +416,27 @@ elif args.violins:
     for dataFrame in dataFrames:
         showLegend = True if len(dataFrames) > 1 else False
         for col in dataFrame['frame'].columns:
-            data = list(dataFrame['frame'][col])
+            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
             index = f"['{col}'] * {len(data)}"
+            ydata = index if not args.vertical else data
+            xdata = index if args.vertical else data
+            updateRange([xdata, ydata])
+
             side = 'both'
             if args.violinmode == 'halfhalf':
                 side = 'negative' if colourIndex % 2 == 0 else 'positive'
             elif args.violinmode[:4] == 'half':
                 side = 'positive'
             fillcolour = colours[colourIndex % len(colours)]
-            markercolour = list(fillcolour.range_to(colour.Color("black"), 8))[1]
+            markercolour = colour.Color(args.line_colour)
             plotScript.write(f"""
 fig.add_trace(go.Violin(
     name='{dataFrame['name']}',
     legendgroup='{dataFrame['name']}',
     showlegend={showLegend},
     scalegroup='trace{traceIndex}',
-    y={index if not args.vertical else data},
-    x={index if args.vertical else data},
+    y={ydata},
+    x={xdata},
     fillcolor='{fillcolour.hex}',
     line_width={args.line_width},
     line_color='{markercolour.hex}',
@@ -421,23 +472,47 @@ else:
 
 if args.x_title is not None:
     plotScript.write(f"fig.update_layout(xaxis_title='{args.x_title}')\n")
+else:
+    plotScript.write(f"# fig.update_layout(xaxis_title='No Title')\n")
+
 
 if args.y_title is not None:
     plotScript.write(f"fig.update_layout(yaxis_title='{args.y_title}')\n")
+else:
+    plotScript.write(f"# fig.update_layout(yaxis_title='No Title')\n")
 
 if args.legend_hide:
     plotScript.write(f"fig.update_layout(showlegend=False)\n")
+else:
+    plotScript.write(f"# fig.update_layout(showlegend=False)\n")
 
 
+if args.y_range_from is not None or args.y_range_to is not None:
+    args.y_range_from = args.y_range_from if args.y_range_from is not None else range[1][0]
+    args.y_range_to = args.y_range_to if args.y_range_to is not None else range[1][1]
+    plotScript.write(f"fig.update_yaxes(range=[{args.y_range_from}, {args.y_range_to}])\n")
+else:
+    plotScript.write(f"# fig.update_yaxes(range=[{range[1][0]}, {range[1][1]}])\n")
+
+if args.x_range_from is not None or args.x_range_to is not None:
+    args.x_range_from = args.x_range_from if args.x_range_from is not None else range[0][0]
+    args.x_range_to = args.x_range_to if args.x_range_to is not None else range[0][1]
+    plotScript.write(f"fig.update_xaxes(range=[{args.x_range_from}, {args.x_range_to}])\n")
+else:
+    plotScript.write(f"# fig.update_xaxes(range=[{range[0][0]}, {range[0][1]}])\n")
+
+plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}), legend_orientation='{'v' if args.legend_vertical else 'h'}')\n")
-plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}',size={args.font_size},color='{args.font_colour}'))\n")
+plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
 
 plotScript.write("\n\n")
 
 # Output
+plotScript.write("# plotly.offline.plot(fig, filename='example.html', auto_open=True)\n")
 if not args.output:
     plotScript.write("fig.show()\n")
 else:
+    plotScript.write("# fig.show()\n")
     for output in args.output:
         if (output.endswith('.html')):
             plotScript.write(f"plotly.offline.plot(fig, filename='{output}', auto_open={not args.quiet})\n")
@@ -447,7 +522,7 @@ else:
                 if shutil.which(app) is not None:
                     openWith = app
                     break
-            plotScript.write(f"exportFigure(fig,{args.width if args.width else None},{args.height if args.height else None},'{output}')\nprint('Saved to {output}')\n")
+            plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}')\nprint('Saved to {output}')\n")
             if not args.quiet and openWith is not None:
                 plotScript.write(f"""
 try:

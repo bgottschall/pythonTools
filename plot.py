@@ -286,48 +286,6 @@ import plotly.graph_objects as go
 if args.output:
     for output in args.output:
         if not output.endswith('.html'):
-            plotScript.write("""
-import os
-import subprocess
-import tempfile
-import shutil
-defaultOrca = ['/opt/plotly-orca/orca', '/opt/plotly/orca', '/opt/orca/orca', '/usr/bin/orca', 'orca']
-orcaBin = os.getenv('PLOTLY_ORCA')
-orcaArgs = ['--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
-
-if orcaBin is None:
-    for executable in defaultOrca:
-        orcaBin = shutil.which(executable)
-        if orcaBin is not None:
-            break
-else:
-    orcaBin = shutil.which(orcaBin)
-
-if orcaBin is None:
-    raise Exception('Could not find orca!')
-
-
-def exportFigure(fig, width, height, exportFile):
-    tmpFd, tmpFile = tempfile.mkstemp()
-    try:
-        exportFile = os.path.abspath(exportFile)
-        exportDir = os.path.dirname(exportFile)
-        exportFilename = os.path.basename(exportFile)
-        _, fileExtension = os.path.splitext(exportFilename)
-        fileExtension = fileExtension.lstrip('.')
-        go.Figure(fig).write_json(tmpFile)
-
-        cmd = [orcaBin]
-        cmd.extend(['graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension])
-        if width is not None:
-            cmd.extend(['--width', f'{width}'])
-        if height is not None:
-            cmd.extend(['--height', f'{height}'])
-        cmd.extend(orcaArgs)
-        subprocess.run(cmd, check=True)
-    finally:
-        os.remove(tmpFile)
-""")
             break
 
 plotScript.write("\n\nplotly.io.templates.default = 'plotly_white'\n")
@@ -501,29 +459,85 @@ if args.x_range_from is not None or args.x_range_to is not None:
 else:
     plotScript.write(f"# fig.update_xaxes(range=[{range[0][0]}, {range[0][1]}])\n")
 
-plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
+plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l if args.margin_l else 0 if args.y_title is None else None}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b if args.margin_b else 0 if args.x_title is None else None}, pad={args.margin_pad}))\n")
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}), legend_orientation='{'v' if args.legend_vertical else 'h'}')\n")
 plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
 
 plotScript.write("\n\n")
 
-# Output
-plotScript.write("# plotly.offline.plot(fig, filename='example.html', auto_open=True)\n")
+plotScript.write("""
+# To export to any other format than html, you need a special orca version from plotly
+# https://github.com/plotly/orca/releases
+orcaBin = None
+import os
+import shutil
+import subprocess
+
+
+def determineOrca():
+    global orcaBin
+    if orcaBin is not None:
+        orcaBin = shutil.which(orcaBin)
+    else:
+        orcaBin = os.getenv('PLOTLY_ORCA')
+
+    if orcaBin is None:
+        for executable in ['/opt/plotly-orca/orca', '/opt/plotly/orca', '/opt/orca/orca', '/usr/bin/orca', 'orca']:
+            orcaBin = shutil.which(executable)
+            if orcaBin is not None:
+                break
+
+    if orcaBin is None:
+        raise Exception('Could not find orca!')
+
+
+def exportFigure(fig, width, height, exportFile):
+    if exportFile.endswith('.html'):
+        plotly.offline.plot(fig, filename=exportFile, auto_open=False)
+        return
+    else:
+        import tempfile
+        import plotly.graph_objects as go
+
+        global orcaBin
+        if orcaBin is None:
+            determineOrca()
+
+        tmpFd, tmpFile = tempfile.mkstemp()
+        try:
+            exportFile = os.path.abspath(exportFile)
+            exportDir = os.path.dirname(exportFile)
+            exportFilename = os.path.basename(exportFile)
+            _, fileExtension = os.path.splitext(exportFilename)
+            fileExtension = fileExtension.lstrip('.')
+
+            go.Figure(fig).write_json(tmpFile)
+            cmd = [orcaBin, 'graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension, '--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
+            if width is not None:
+                cmd.extend(['--width', f'{width}'])
+            if height is not None:
+                cmd.extend(['--height', f'{height}'])
+            subprocess.run(cmd, check=True)
+        finally:
+            os.remove(tmpFile)
+
+""")
+
 if not args.output:
     plotScript.write("fig.show()\n")
+    plotScript.write("# exportFigure(fig, 1920, 1080, 'figure.pdf')\n")
 else:
     plotScript.write("# fig.show()\n")
     for output in args.output:
-        if (output.endswith('.html')):
-            plotScript.write(f"plotly.offline.plot(fig, filename='{output}', auto_open={not args.quiet})\n")
-        else:
-            openWith = None
-            for app in ['xdg-open', 'open', 'start']:
-                if shutil.which(app) is not None:
-                    openWith = app
-                    break
-            plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}')\nprint('Saved to {output}')\n")
-            if not args.quiet and openWith is not None:
+        plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}')\nprint('Saved to {output}')\n")
+    if not args.quiet:
+        openWith = None
+        for app in ['xdg-open', 'open', 'start']:
+            if shutil.which(app) is not None:
+                openWith = app
+                break
+        if openWith is not None:
+            for output in args.output:
                 plotScript.write(f"""
 try:
     subprocess.check_call(['{openWith}', '{output}'], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)

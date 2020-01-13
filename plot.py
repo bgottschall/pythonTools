@@ -88,7 +88,10 @@ parser.add_argument("--per-trace-colour", action='store_true', help="one colour 
 
 parser.add_argument("--legend-x", type=float, help="x legend position (-2 to 3)", default=None)
 parser.add_argument("--legend-y", type=float, help="y legend position (-2 to 3)", default=None)
-parser.add_argument("--legend-hide", action="store_true", help="hide legend", default=False)
+parser.add_argument("--legend-x-anchor", choices=['auto', 'left', 'center', 'right'], help="set legend xanchor", default=None)
+parser.add_argument("--legend-y-anchor", choices=['auto', 'top', 'bottom', 'middle'], help="set legend yanchor", default=None)
+parser.add_argument("--legend-hide", action="store_true", help="hides legend", default=False)
+parser.add_argument("--legend-show", action="store_true", help="forces legend to show up", default=False)
 parser.add_argument("--legend-vertical", action="store_true", help="horizontal legend", default=False)
 parser.add_argument("--legend-horizontal", action="store_true", help="vertical legend", default=False)
 
@@ -101,8 +104,8 @@ parser.add_argument("--margin-pad", type=int, help="sets padding", default=None)
 parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
 parser.add_argument("--height", help="plot height (not compatible with html)", type=int)
-parser.add_argument("--save-script", help="only save self-contained plotting script", type=str, default=None)
-parser.add_argument("--save-only", action="store_true", help="only save self-contained plotting script", default=False)
+parser.add_argument("--save-script", help="save self-contained plotting script", type=str, default=None)
+parser.add_argument("--save-only", action="store_true", help="do not execute plotting script (only comptabile with save-script)", default=False)
 
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 
@@ -157,6 +160,9 @@ elif args.opacity is False:
 if (args.horizontal and args.vertical):
     print("WARNING: cannot plot horizontal and vertical, going to plot horizontal")
     args.vertical = False
+
+if (not args.horizontal and not args.vertical):
+    args.horizontal = True
 
 if (args.legend_vertical and args.legend_horizontal):
     print("WARNING: cannot plot legend horizontal and vertical, going to plot vertical")
@@ -414,6 +420,8 @@ fig.add_trace(go.Violin(
     plotScript.write(f"\nfig.update_traces(scalemode='width', width={args.violinwidth}, points=False)\n")
     plotScript.write(f"fig.update_layout(violinmode='{args.violinmode}', violingap={args.violingap}, violingroupgap={args.violingroupgap})\n")
 
+plotScript.write("\n\n")
+
 # Styling the figure
 plotScript.write(f"fig.update_traces(opacity={args.opacity})\n")
 
@@ -441,9 +449,22 @@ else:
 
 if args.legend_hide:
     plotScript.write(f"fig.update_layout(showlegend=False)\n")
+elif args.legend_show:
+    plotScript.write(f"fig.update_layout(showlegend=True)\n")
 else:
     plotScript.write(f"# fig.update_layout(showlegend=False)\n")
 
+if args.legend_x_anchor:
+    plotScript.write(f"fig.update_layout(legend_xanchor='{args.legend_x_anchor}')\n")
+else:
+    plotScript.write(f"# fig.update_layout(legend_xanchor='auto')\n")
+
+if args.legend_y_anchor:
+    plotScript.write(f"fig.update_layout(legend_xanchor='{args.legend_y_anchor}')\n")
+else:
+    plotScript.write(f"# fig.update_layout(legend_yanchor='auto')\n")
+
+plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}'))\n")
 
 if args.y_range_from is not None or args.y_range_to is not None:
     args.y_range_from = args.y_range_from if args.y_range_from is not None else range[1][0]
@@ -460,7 +481,6 @@ else:
     plotScript.write(f"# fig.update_xaxes(range=[{range[0][0]}, {range[0][1]}])\n")
 
 plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l if args.margin_l else 0 if args.y_title is None else None}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b if args.margin_b else 0 if args.x_title is None else None}, pad={args.margin_pad}))\n")
-plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}), legend_orientation='{'v' if args.legend_vertical else 'h'}')\n")
 plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
 
 plotScript.write("\n\n")
@@ -472,6 +492,7 @@ orcaBin = None
 import os
 import shutil
 import subprocess
+import tempfile
 
 
 def determineOrca():
@@ -496,9 +517,6 @@ def exportFigure(fig, width, height, exportFile):
         plotly.offline.plot(fig, filename=exportFile, auto_open=False)
         return
     else:
-        import tempfile
-        import plotly.graph_objects as go
-
         global orcaBin
         if orcaBin is None:
             determineOrca()
@@ -520,6 +538,7 @@ def exportFigure(fig, width, height, exportFile):
             subprocess.run(cmd, check=True)
         finally:
             os.remove(tmpFile)
+
 
 """)
 

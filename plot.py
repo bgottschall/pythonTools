@@ -64,25 +64,29 @@ parser.add_argument("--violingap", type=float, help="change gap between violins 
 parser.add_argument("--violingroupgap", type=float, help="change gap between violin groups (not compatible with violinwidth)", default=0.3)
 parser.add_argument("--boxes", action="store_true", help="produce a box chart", default=False)
 parser.add_argument("--boxmode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
-parser.add_argument("--rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode", default='normal')
 
 parser.add_argument("--line-width", type=int, help="define line width", default=1)
 parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#333333')
 parser.add_argument("--horizontal", action="store_true", help="horizontal chart", default=False)
 parser.add_argument("--vertical", action="store_true", help="vertical chart", default=False)
+parser.add_argument("--rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode", default='normal')
+parser.add_argument("--y-rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode for x-axis", default=None)
+parser.add_argument("--x-rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode for y-axis", default=None)
 parser.add_argument("--x-range-from", type=float, help="x-axis start", default=None)
 parser.add_argument("--x-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--y-range-from", type=float, help="x-axis start", default=None)
 parser.add_argument("--y-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--x-title", help="x-axis title", default=None)
 parser.add_argument("--y-title", help="y-axis title", default=None)
+
 parser.add_argument("--font-size", type=int, help="font size", default=12)
 parser.add_argument("--font-family", help="font family", default='"Open Sans", verdana, arial, sans-serif')
 parser.add_argument("--font-colour", help="font colour", default='#000000')
+
 parser.add_argument("-c", "--colour", action='append', help="define colours")
-parser.add_argument("--opacity", type=float, help="colour opacity (default 0.8 for overlay modes)", default=False)
 parser.add_argument("--colour-from", help="colour gradient start", default="#084A91")
 parser.add_argument("--colour-to", help="colour gradient end", default="#97B5CA")
+parser.add_argument("--opacity", type=float, help="colour opacity (default 0.8 for overlay modes)", default=False)
 parser.add_argument("--per-dataset-colour", action='store_true', help="one colour per dataset (default for box and violin)", default=False)
 parser.add_argument("--per-trace-colour", action='store_true', help="one colour per trace (default for bar and lines)", default=False)
 
@@ -272,7 +276,7 @@ if (args.sort_files):
 
 # Building up the colour array
 requiredColours = traceCount if args.per_trace_colour else len(dataFrames)
-colours = [colour.Color(c) for c in args.colour] if args.colour else list(colour.Color(args.colour_from).range_to(colour.Color(args.colour_to), requiredColours))
+colours = args.colour if args.colour else [c.hex for c in list(colour.Color(args.colour_from).range_to(colour.Color(args.colour_to), requiredColours))]
 colourIndex = 0
 
 plotFd = None
@@ -307,7 +311,7 @@ fig.add_trace(go.Scatter(
     name='{col}',
     mode='{args.linemode}',
     legendgroup='{col}',
-    line_color='{colours[colourIndex % len(colours)].hex}',
+    line_color='{colours[colourIndex % len(colours)]}',
     line_width={args.line_width},
     y={ydata},
     x={xdata},
@@ -351,7 +355,7 @@ elif args.boxes:
             updateRange([xdata, ydata])
 
             fillcolour = colours[colourIndex % len(colours)]
-            markercolour = colour.Color(args.line_colour)
+            markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Box(
     name='{dataFrame['name']}',
@@ -361,9 +365,9 @@ fig.add_trace(go.Box(
     x={xdata},
     boxpoints=False,
     boxmean=True,
-    fillcolor='{fillcolour.hex}',
+    fillcolor='{fillcolour}',
     line_width={args.line_width},
-    line_color='{markercolour.hex}',
+    line_color='{markercolour}',
     orientation='{'v' if args.vertical else 'h'}',
 ))
 """)
@@ -392,7 +396,7 @@ elif args.violins:
             elif args.violinmode[:4] == 'half':
                 side = 'positive'
             fillcolour = colours[colourIndex % len(colours)]
-            markercolour = colour.Color(args.line_colour)
+            markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Violin(
     name='{dataFrame['name']}',
@@ -401,9 +405,9 @@ fig.add_trace(go.Violin(
     scalegroup='trace{traceIndex}',
     y={ydata},
     x={xdata},
-    fillcolor='{fillcolour.hex}',
+    fillcolor='{fillcolour}',
     line_width={args.line_width},
-    line_color='{markercolour.hex}',
+    line_color='{markercolour}',
     side='{side}',
     orientation='{'v' if args.vertical else 'h'}',
 ))
@@ -422,7 +426,7 @@ fig.add_trace(go.Violin(
 
 plotScript.write("\n\n")
 
-# Styling the figure
+plotScript.write(f"\n# Layout of axes\n")
 plotScript.write(f"fig.update_traces(opacity={args.opacity})\n")
 
 if args.bars or args.boxes or args.violins:
@@ -431,22 +435,29 @@ if args.bars or args.boxes or args.violins:
     else:
         plotScript.write("fig.update_layout(yaxis_type='category')\n")
 
-if not args.vertical:
-    plotScript.write(f"fig.update_xaxes(rangemode='{args.rangemode}')\n")
-else:
-    plotScript.write(f"fig.update_yaxes(rangemode='{args.rangemode}')\n")
 
+if (args.y_rangemode is None):
+    args.y_rangemode = args.rangemode
+if (args.x_rangemode is None):
+    args.x_rangemode = args.rangemode
+
+plotScript.write(f"fig.update_xaxes(rangemode='{args.x_rangemode}')\n")
+plotScript.write(f"fig.update_yaxes(rangemode='{args.y_rangemode}')\n")
+plotScript.write(f"# fig.update_xaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
+plotScript.write(f"# fig.update_yaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
+
+
+plotScript.write(f"\n# Axes Title\n")
 if args.x_title is not None:
     plotScript.write(f"fig.update_layout(xaxis_title='{args.x_title}')\n")
 else:
     plotScript.write(f"# fig.update_layout(xaxis_title='No Title')\n")
-
-
 if args.y_title is not None:
     plotScript.write(f"fig.update_layout(yaxis_title='{args.y_title}')\n")
 else:
     plotScript.write(f"# fig.update_layout(yaxis_title='No Title')\n")
 
+plotScript.write(f"\n# Layout Legend\n")
 if args.legend_hide:
     plotScript.write(f"fig.update_layout(showlegend=False)\n")
 elif args.legend_show:
@@ -464,8 +475,12 @@ if args.legend_y_anchor:
 else:
     plotScript.write(f"# fig.update_layout(legend_yanchor='auto')\n")
 
-plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}'))\n")
+plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}', bgcolor='rgba(255,255,255,0)'))\n")
 
+plotScript.write(f"\n# Layout Plot and Background\n")
+plotScript.write(f"fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plot_bgcolor='rgba(255, 255, 255, 0)')\n")
+plotScript.write(f"# fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey')\n")
+plotScript.write(f"# fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey')\n")
 if args.y_range_from is not None or args.y_range_to is not None:
     args.y_range_from = args.y_range_from if args.y_range_from is not None else range[1][0]
     args.y_range_to = args.y_range_to if args.y_range_to is not None else range[1][1]
@@ -481,6 +496,9 @@ else:
     plotScript.write(f"# fig.update_xaxes(range=[{range[0][0]}, {range[0][1]}])\n")
 
 plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l if args.margin_l else 0 if args.y_title is None else None}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b if args.margin_b else 0 if args.x_title is None else None}, pad={args.margin_pad}))\n")
+
+
+plotScript.write(f"\n# Plot Font\n")
 plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
 
 plotScript.write("\n\n")

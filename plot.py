@@ -9,6 +9,7 @@ import re
 import colour
 import subprocess
 import shutil
+import statistics
 
 range = [[None, None], [None, None]]
 
@@ -64,6 +65,7 @@ parser.add_argument("--violingap", type=float, help="change gap between violins 
 parser.add_argument("--violingroupgap", type=float, help="change gap between violin groups (not compatible with violinwidth)", default=0.3)
 parser.add_argument("--boxes", action="store_true", help="produce a box chart", default=False)
 parser.add_argument("--boxmode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
+parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean", default='dot')
 
 parser.add_argument("--line-width", type=int, help="define line width", default=1)
 parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#333333')
@@ -76,6 +78,8 @@ parser.add_argument("--x-range-from", type=float, help="x-axis start", default=N
 parser.add_argument("--x-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--y-range-from", type=float, help="x-axis start", default=None)
 parser.add_argument("--y-range-to", type=float, help="x-axis end", default=None)
+parser.add_argument("--x-type", choices=['-', 'linear', 'log', 'date', 'category'], help="choose type for x-axis", default='-')
+parser.add_argument("--y-type", choices=['-', 'linear', 'log', 'date', 'category'], help="choose type for y-axis", default='-')
 parser.add_argument("--x-title", help="x-axis title", default=None)
 parser.add_argument("--y-title", help="y-axis title", default=None)
 
@@ -315,6 +319,7 @@ fig.add_trace(go.Scatter(
     line_width={args.line_width},
     y={ydata},
     x={xdata},
+    opacity={args.opacity},
 ))
 """)
             colourIndex += 1 if args.per_trace_colour else 0
@@ -338,6 +343,7 @@ fig.add_trace(go.Bar(
     marker_line_color='{markercolour}',
     y={ydata},
     x={xdata},
+    opacity={args.opacity},
 ))
 """)
             colourIndex += 1 if args.per_trace_colour else 0
@@ -364,22 +370,36 @@ fig.add_trace(go.Box(
     y={ydata},
     x={xdata},
     boxpoints=False,
-    boxmean=True,
+    boxmean={True if args.box_mean == 'line' else False},
     fillcolor='{fillcolour}',
     line_width={args.line_width},
     line_color='{markercolour}',
     orientation='{'v' if args.vertical else 'h'}',
+    opacity={args.opacity},
 ))
 """)
             showLegend = False
             traceIndex += 1
             colourIndex += 1 if args.per_trace_colour else 0
+            if args.box_mean == 'dot':
+                plotScript.write(f"""
+fig.add_trace(go.Scatter(
+   name='mean_{dataFrame['name']}',
+   legendgroup='{dataFrame['name']}',
+   showlegend=False,
+   x={xdata if args.vertical else [statistics.mean(xdata)]},
+   y={ydata if not args.vertical else [statistics.mean(ydata)]},
+   fillcolor='{fillcolour}',
+   line_width={args.line_width},
+   line_color='{markercolour}'
+))
+""")
         colourIndex += 1 if args.per_dataset_colour else 0
     plotScript.write(f"\nfig.update_layout(boxmode='{args.boxmode}')\n")
 elif args.violins:
-    if args.violinmode == 'halfhalf' and len(dataFrames) != 2:
-        print("WARNING: violinmode 'halfhalf' only supported for two datasets, fallback to 'halfoverlay")
-        args.violinmode = 'halfoverlay'
+    #if args.violinmode == 'halfhalf' and len(dataFrames) != 2:
+    #    print("WARNING: violinmode 'halfhalf' only supported for two datasets, fallback to 'halfoverlay")
+    #    args.violinmode = 'halfoverlay'
     traceIndex = 0
     for dataFrame in dataFrames:
         showLegend = True if len(dataFrames) > 1 else False
@@ -410,6 +430,7 @@ fig.add_trace(go.Violin(
     line_color='{markercolour}',
     side='{side}',
     orientation='{'v' if args.vertical else 'h'}',
+    opacity={args.opacity},
 ))
 """)
             showLegend = False
@@ -427,14 +448,7 @@ fig.add_trace(go.Violin(
 plotScript.write("\n\n")
 
 plotScript.write(f"\n# Layout of axes\n")
-plotScript.write(f"fig.update_traces(opacity={args.opacity})\n")
-
-if args.bars or args.boxes or args.violins:
-    if (args.vertical):
-        plotScript.write("fig.update_layout(xaxis_type='category')\n")
-    else:
-        plotScript.write("fig.update_layout(yaxis_type='category')\n")
-
+plotScript.write(f"fig.update_layout(yaxis_type='{args.y_type}', xaxis_type='{args.x_type}')\n")
 
 if (args.y_rangemode is None):
     args.y_rangemode = args.rangemode
@@ -501,9 +515,19 @@ plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None e
 plotScript.write(f"\n# Plot Font\n")
 plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
 
+
+plotScript.write("""
+# Execute addon file
+import os
+filename, fileext = os.path.splitext(__file__)
+if (os.path.exists(f'{filename}_addon{fileext}')):
+    exec(open(f'{filename}_addon.py').read())
+""")
+
 plotScript.write("\n\n")
 
 plotScript.write("""
+
 # To export to any other format than html, you need a special orca version from plotly
 # https://github.com/plotly/orca/releases
 orcaBin = None

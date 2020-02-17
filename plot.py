@@ -53,33 +53,43 @@ parser.add_argument("--sort-column", type=int, help="sort after column (only com
 parser.add_argument("--descending", action="store_true", help="sort descending", default=False)
 
 parser.add_argument("--name", action='append', help="define names")
-
+# Type of plots:
 parser.add_argument("--lines", action="store_true", help="produce a line chart", default=False)
-parser.add_argument("--linemode", choices=['line', 'scatter', 'combined'], help="choose linemode", default='line')
 parser.add_argument("--bars", action="store_true", help="produce a bar chart", default=False)
-parser.add_argument("--barmode", choices=['stack', 'group', 'overlay', 'relative'], help="choose barmode", default='group')
 parser.add_argument("--violins", action="store_true", help="produce a violin chart", default=False)
-parser.add_argument("--violinmode", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], help="choose violinmode", default='overlay')
-parser.add_argument("--violinwidth", type=float, help="change violin widths", default=0)
-parser.add_argument("--violingap", type=float, help="change gap between violins (no compatible with violinwidth)", default=0.3)
-parser.add_argument("--violingroupgap", type=float, help="change gap between violin groups (not compatible with violinwidth)", default=0.3)
 parser.add_argument("--boxes", action="store_true", help="produce a box chart", default=False)
-parser.add_argument("--boxmode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
+# Line plot specific options
+parser.add_argument("--line-mode", choices=['line', 'scatter', 'combined'], help="choose linemode", default='line')
+# Bar plot specific options
+parser.add_argument("--bar-mode", choices=['stack', 'group', 'overlay', 'relative'], help="choose barmode", default='group')
+# Violin plot specific options
+parser.add_argument("--violin-mode", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], help="choose violinmode", default='overlay')
+parser.add_argument("--violin-width", type=float, help="change violin widths", default=0)
+parser.add_argument("--violin-gap", type=float, help="change gap between violins (no compatible with violinwidth)", default=0.3)
+parser.add_argument("--violin-group-gap", type=float, help="change gap between violin groups (not compatible with violinwidth)", default=0.3)
+# Box plot specific options
+parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean", default='dot')
 
 parser.add_argument("--line-width", type=int, help="define line width", default=1)
 parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#333333')
 parser.add_argument("--horizontal", action="store_true", help="horizontal chart", default=False)
 parser.add_argument("--vertical", action="store_true", help="vertical chart", default=False)
-parser.add_argument("--rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode", default='normal')
-parser.add_argument("--y-rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode for x-axis", default=None)
-parser.add_argument("--x-rangemode", choices=['normal', 'tozero', 'nonnegative'], help="choose rangemode for y-axis", default=None)
+parser.add_argument("--range-mode", choices=['normal', 'tozero', 'nonnegative'], help="choose range mode", default='normal')
+parser.add_argument("--y-range-mode", choices=['normal', 'tozero', 'nonnegative'], help="choose range mode for x-axis", default=None)
+parser.add_argument("--x-range-mode", choices=['normal', 'tozero', 'nonnegative'], help="choose range mode for y-axis", default=None)
 parser.add_argument("--x-range-from", type=float, help="x-axis start", default=None)
 parser.add_argument("--x-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--y-range-from", type=float, help="x-axis start", default=None)
 parser.add_argument("--y-range-to", type=float, help="x-axis end", default=None)
 parser.add_argument("--x-type", choices=['-', 'linear', 'log', 'date', 'category'], help="choose type for x-axis", default='-')
 parser.add_argument("--y-type", choices=['-', 'linear', 'log', 'date', 'category'], help="choose type for y-axis", default='-')
+parser.add_argument("--x-tick-format", help="change format of x-axis ticks", default='')
+parser.add_argument("--y-tick-format", help="change format of y-axis ticks", default='')
+parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks ", default='')
+parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks ", default='')
+parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks ", default='')
+parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks ", default='')
 parser.add_argument("--x-title", help="x-axis title", default=None)
 parser.add_argument("--y-title", help="y-axis title", default=None)
 
@@ -90,9 +100,11 @@ parser.add_argument("--font-colour", help="font colour", default='#000000')
 parser.add_argument("-c", "--colour", action='append', help="define colours")
 parser.add_argument("--colour-from", help="colour gradient start", default="#084A91")
 parser.add_argument("--colour-to", help="colour gradient end", default="#97B5CA")
-parser.add_argument("--opacity", type=float, help="colour opacity (default 0.8 for overlay modes)", default=False)
 parser.add_argument("--per-dataset-colour", action='store_true', help="one colour per dataset (default for box and violin)", default=False)
 parser.add_argument("--per-trace-colour", action='store_true', help="one colour per trace (default for bar and lines)", default=False)
+parser.add_argument("--default-plotly-colours", action='store_true', help="use default plotly colours", default=False)
+
+parser.add_argument("--opacity", type=float, help="colour opacity (default 0.8 for overlay modes)", default=False)
 
 parser.add_argument("--legend-x", type=float, help="x legend position (-2 to 3)", default=None)
 parser.add_argument("--legend-y", type=float, help="y legend position (-2 to 3)", default=None)
@@ -124,7 +136,7 @@ if (not args.files) or (len(args.files) <= 0):
     parser.print_help()
     sys.exit(1)
 
-if (args.violingroupgap < 0 or args.violingroupgap > 1):
+if (args.violin_group_gap < 0 or args.violin_group_gap > 1):
     print("ERROR: 0 <= violingroupgap <= 1")
     parser.print_help()
     sys.exit(1)
@@ -134,12 +146,12 @@ if (args.opacity and (args.opacity < 0 or args.opacity > 1)):
     parser.print_help()
     sys.exit(1)
 
-if (args.violingap < 0 or args.violingap > 1):
+if (args.violin_gap < 0 or args.violin_gap > 1):
     print("error: 0 <= violingap <= 1")
     parser.print_help()
     sys.exit(1)
 
-if (args.violinwidth < 0):
+if (args.violin_width < 0):
     print("ERROR: 0 <= violinwidth")
     parser.print_help()
     sys.exit(1)
@@ -158,9 +170,9 @@ if (not args.per_dataset_colour and not args.per_trace_colour):
 elif (args.per_trace_colour):
     args.per_dataset_colour = False
 
-if args.opacity is False and ((args.boxes and 'overlay' in args.boxmode) or
-                              (args.violins and 'overlay' in args.violinmode) or
-                              (args.bars and 'overlay' in args.barmode)):
+if args.opacity is False and ((args.boxes and 'overlay' in args.box_mode) or
+                              (args.violins and 'overlay' in args.violin_mode) or
+                              (args.bars and 'overlay' in args.bar_mode)):
     args.opacity = 0.8
 elif args.opacity is False:
     args.opacity = 1.0
@@ -194,7 +206,9 @@ if (args.legend_y < -2 or args.legend_y > 3):
     parser.print_help()
     sys.exit(1)
 
-args.linemode = 'lines' if args.linemode == 'line' else 'markers' if args.linemode == 'scatter' else 'lines+markers'
+colourComment = '# ' if args.default_plotly_colours else ''
+
+args.line_mode = 'lines' if args.line_mode == 'line' else 'markers' if args.line_mode == 'scatter' else 'lines+markers'
 
 dataFrames = []
 
@@ -204,35 +218,37 @@ if delimiter == '\\t':
     delimiter = '\t'
 
 traceCount = 0
+
 # Going through all files
 for sFilename in args.files:
+    localDelimiter = delimiter
     # Read in as utf-8 and replace windows crlf if necessary
     sFile = open(sFilename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
 
     # Check if we can detect the data delimiter if it was not passed in manually
-    if delimiter is None:
+    if localDelimiter is None:
         # Try to find delimiters
         for tryDelimiter in detectDelimiter:
             if sum([x.count(tryDelimiter) for x in sFile.split('\n')]) > 0:
-                delimiter = tryDelimiter
+                localDelimiter = tryDelimiter
                 break
         # Fallback if there is just one column and no index column
-        delimiter = ' ' if delimiter is None and args.no_index else delimiter
-        if (delimiter is None):
+        localDelimiter = ' ' if localDelimiter is None and args.no_index else localDelimiter
+        if (localDelimiter is None):
             raise Exception('Could not identify data separator, please specify it manually')
     # Data delimiters clean up, remove multiple separators and separators from the end
-    reDelimiter = re.escape(delimiter)
+    reDelimiter = re.escape(localDelimiter)
     sFile = re.sub(reDelimiter + '{1,}\n', '\n', sFile)
     # Tab and space delimiters, replace multiple occurences
-    if delimiter == ' ' or delimiter == '\t':
-        sFile = re.sub(reDelimiter + '{2,}', delimiter, sFile)
+    if localDelimiter == ' ' or localDelimiter == '\t':
+        sFile = re.sub(reDelimiter + '{2,}', localDelimiter, sFile)
     # Parse the file
     fData = [
-        ["NaN" if val.lower() in considerAsNaN else val for val in x.split(delimiter)]
+        ["NaN" if val.lower() in considerAsNaN else val for val in x.split(localDelimiter)]
         for x in sFile.split('\n')
         if (len(x) > 0) and  # Ignore empty lines
         (len(args.ignore_line_start) > 0 and not x.startswith(args.ignore_line_start)) and  # Ignore lines starting with
-        (args.no_index or x.count(delimiter) > 0)  # Ignore lines which contain no data
+        (args.no_index or x.count(localDelimiter) > 0)  # Ignore lines which contain no data
     ]
     fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
     if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not args.no_index):
@@ -292,18 +308,32 @@ else:
     plotScriptName = args.save_script
     plotScript = open(plotScriptName, 'w+')
 
+
+data = [
+    {'index': 0, 'data': 1},
+]
+
 plotScript.write("""#!/usr/bin/env python
 import plotly
 import plotly.graph_objects as go
 """)
 
-if args.output:
-    for output in args.output:
-        if not output.endswith('.html'):
-            break
-
 plotScript.write("\n\nplotly.io.templates.default = 'plotly_white'\n")
-plotScript.write("fig = go.Figure()\n\n")
+plotScript.write("# To add secondary axes, toggle the appropriate boolean values for traces and here:\n")
+plotScript.write("""fig = plotly.subplots.make_subplots(
+    rows=1,
+    cols=1,
+    column_widths=[1.0],
+    shared_xaxes=False,
+    shared_yaxes=False,
+    vertical_spacing=0.0,
+    horizontal_spacing=0.0,
+    specs=[
+        [{'secondary_y': False}]
+    ]
+)
+""")
+
 if args.lines:
     for dataFrame in dataFrames:
         for col in dataFrame['frame'].columns:
@@ -313,14 +343,14 @@ if args.lines:
             plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='{col}',
-    mode='{args.linemode}',
+    mode='{args.line_mode}',
     legendgroup='{col}',
-    line_color='{colours[colourIndex % len(colours)]}',
+{colourComment}{colourComment}    line_color='{colours[colourIndex % len(colours)]}',
     line_width={args.line_width},
     y={ydata},
     x={xdata},
     opacity={args.opacity},
-))
+), row=1, col=1, secondary_y=False)
 """)
             colourIndex += 1 if args.per_trace_colour else 0
         colourIndex += 1 if args.per_dataset_colour else 0
@@ -338,17 +368,17 @@ fig.add_trace(go.Bar(
     name='{col}',
     legendgroup='{col}',
     orientation='{'v' if args.vertical else 'h'}',
-    marker_color='{fillcolour}',
+{colourComment}    marker_color='{fillcolour}',
     marker_line_width={args.line_width},
-    marker_line_color='{markercolour}',
+{colourComment}    marker_line_color='{markercolour}',
     y={ydata},
     x={xdata},
     opacity={args.opacity},
-))
+), row=1, col=1, secondary_y=False)
 """)
             colourIndex += 1 if args.per_trace_colour else 0
         colourIndex += 1 if args.per_dataset_colour else 0
-    plotScript.write(f"fig.update_layout(barmode='{args.barmode}')\n")
+    plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}')\n")
 elif args.boxes:
     traceIndex = 0
     for dataFrame in dataFrames:
@@ -371,12 +401,12 @@ fig.add_trace(go.Box(
     x={xdata},
     boxpoints=False,
     boxmean={True if args.box_mean == 'line' else False},
-    fillcolor='{fillcolour}',
+{colourComment}    fill_color='{fillcolour}',
     line_width={args.line_width},
-    line_color='{markercolour}',
+{colourComment}{colourComment}    line_color='{markercolour}',
     orientation='{'v' if args.vertical else 'h'}',
     opacity={args.opacity},
-))
+), row=1, col=1, secondary_y=False)
 """)
             showLegend = False
             traceIndex += 1
@@ -384,22 +414,19 @@ fig.add_trace(go.Box(
             if args.box_mean == 'dot':
                 plotScript.write(f"""
 fig.add_trace(go.Scatter(
-   name='mean_{dataFrame['name']}',
-   legendgroup='{dataFrame['name']}',
-   showlegend=False,
-   x={xdata if args.vertical else [statistics.mean(xdata)]},
-   y={ydata if not args.vertical else [statistics.mean(ydata)]},
-   fillcolor='{fillcolour}',
-   line_width={args.line_width},
-   line_color='{markercolour}'
-))
+    name='mean_{dataFrame['name']}',
+    legendgroup='{dataFrame['name']}',
+    showlegend=False,
+    x={xdata if args.vertical else [statistics.mean(xdata)]},
+    y={ydata if not args.vertical else [statistics.mean(ydata)]},
+{colourComment}    fill_color='{fillcolour}',
+    line_width={args.line_width},
+{colourComment}    line_color='{markercolour}'
+), row=1, col=1, secondary_y=False)
 """)
         colourIndex += 1 if args.per_dataset_colour else 0
-    plotScript.write(f"\nfig.update_layout(boxmode='{args.boxmode}')\n")
+    plotScript.write(f"\nfig.update_layout(boxmode='{args.box_mode}')\n")
 elif args.violins:
-    #if args.violinmode == 'halfhalf' and len(dataFrames) != 2:
-    #    print("WARNING: violinmode 'halfhalf' only supported for two datasets, fallback to 'halfoverlay")
-    #    args.violinmode = 'halfoverlay'
     traceIndex = 0
     for dataFrame in dataFrames:
         showLegend = True if len(dataFrames) > 1 else False
@@ -411,9 +438,9 @@ elif args.violins:
             updateRange([xdata, ydata])
 
             side = 'both'
-            if args.violinmode == 'halfhalf':
+            if args.violin_mode == 'halfhalf':
                 side = 'negative' if colourIndex % 2 == 0 else 'positive'
-            elif args.violinmode[:4] == 'half':
+            elif args.violin_mode[:4] == 'half':
                 side = 'positive'
             fillcolour = colours[colourIndex % len(colours)]
             markercolour = args.line_colour
@@ -425,51 +452,61 @@ fig.add_trace(go.Violin(
     scalegroup='trace{traceIndex}',
     y={ydata},
     x={xdata},
-    fillcolor='{fillcolour}',
+{colourComment}    fill_color='{fillcolour}',
     line_width={args.line_width},
-    line_color='{markercolour}',
+{colourComment}{colourComment}    line_color='{markercolour}',
     side='{side}',
     orientation='{'v' if args.vertical else 'h'}',
     opacity={args.opacity},
-))
+), row=1, col=1, secondary_y=False)
 """)
             showLegend = False
             traceIndex += 1
             colourIndex += 1 if args.per_trace_colour else 0
         colourIndex += 1 if args.per_dataset_colour else 0
 
-    if (args.violinmode == 'halfgroup'):
-        args.violinmode = 'group'
-    elif (args.violinmode[:4] == 'half'):
-        args.violinmode = 'overlay'
-    plotScript.write(f"\nfig.update_traces(scalemode='width', width={args.violinwidth}, points=False)\n")
-    plotScript.write(f"fig.update_layout(violinmode='{args.violinmode}', violingap={args.violingap}, violingroupgap={args.violingroupgap})\n")
+    if (args.violin_mode == 'halfgroup'):
+        args.violin_mode = 'group'
+    elif (args.violin_mode[:4] == 'half'):
+        args.violin_mode = 'overlay'
+    plotScript.write(f"\nfig.update_traces(scalemode='width', width={args.violin_width}, points=False)\n")
+    plotScript.write(f"fig.update_layout(violinmode='{args.violin_mode}', violingap={args.violin_gap}, violingroupgap={args.violin_groupgap})\n")
 
 plotScript.write("\n\n")
 
 plotScript.write(f"\n# Layout of axes\n")
 plotScript.write(f"fig.update_layout(yaxis_type='{args.y_type}', xaxis_type='{args.x_type}')\n")
 
-if (args.y_rangemode is None):
-    args.y_rangemode = args.rangemode
-if (args.x_rangemode is None):
-    args.x_rangemode = args.rangemode
+if (args.y_range_mode is None):
+    args.y_range_mode = args.range_mode
+if (args.x_range_mode is None):
+    args.x_range_mode = args.range_mode
 
-plotScript.write(f"fig.update_xaxes(rangemode='{args.x_rangemode}')\n")
-plotScript.write(f"fig.update_yaxes(rangemode='{args.y_rangemode}')\n")
+plotScript.write(f"fig.update_xaxes(rangemode='{args.x_range_mode}')\n")
+plotScript.write(f"fig.update_yaxes(rangemode='{args.y_range_mode}')\n")
 plotScript.write(f"# fig.update_xaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
 plotScript.write(f"# fig.update_yaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
 
 
 plotScript.write(f"\n# Axes Title\n")
 if args.x_title is not None:
-    plotScript.write(f"fig.update_layout(xaxis_title='{args.x_title}')\n")
+    plotScript.write(f"fig.update_xaxes(title_text='{args.x_title}', col=1, row=1)\n")
 else:
-    plotScript.write(f"# fig.update_layout(xaxis_title='No Title')\n")
+    plotScript.write(f"# fig.update_xaxes(title_text='No Title', col=1, row=1)\n")
 if args.y_title is not None:
-    plotScript.write(f"fig.update_layout(yaxis_title='{args.y_title}')\n")
+    plotScript.write(f"fig.update_yaxes(title_text='{args.y_title}', col=1, row=1, secondary_y=False)\n")
+    plotScript.write(f"# fig.update_yaxes(title_text='Secondary {args.y_title}', col=1, row=1, secondary_y=True)\n")
 else:
-    plotScript.write(f"# fig.update_layout(yaxis_title='No Title')\n")
+    plotScript.write(f"# fig.update_yaxes(title_text='No Title', col=1, row=1, secondary_y=False)\n")
+    plotScript.write(f"# fig.update_yaxes(title_text='No Secondary Title', col=1, row=1, secondary_y=True)\n")
+
+plotScript.write(f"fig.update_xaxes(tickformat='{args.x_tick_format}', ticksuffix='{args.x_tick_suffix}', tickprefix='{args.x_tick_prefix}', col=1, row=1)\n")
+plotScript.write(f"fig.update_yaxes(tickformat='{args.y_tick_format}', ticksuffix='{args.y_tick_suffix}', tickprefix='{args.y_tick_prefix}', col=1, row=1, secondary_y=False)\n")
+plotScript.write(f"# fig.update_yaxes(tickformat='{args.y_tick_format}', ticksuffix='{args.y_tick_suffix}', tickprefix='{args.y_tick_prefix}', col=1, row=1, secondary_y=True)\n")
+
+plotScript.write(f"# fig.update_xaxes(visible=True, showticklabels=True, showgrid=True, zeroline=True, row=1, col=1)\n")
+plotScript.write(f"# fig.update_yaxes(visible=True, showticklabels=True, showgrid=True, zeroline=True, row=1, col=1, secondary_y=False)\n")
+plotScript.write(f"# fig.update_yaxes(visible=True, showticklabels=True, showgrid=True, zeroline=True, row=1, col=1, secondary_y=True)\n")
 
 plotScript.write(f"\n# Layout Legend\n")
 if args.legend_hide:

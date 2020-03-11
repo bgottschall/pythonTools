@@ -72,7 +72,7 @@ parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose box
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean", default='dot')
 
 parser.add_argument("--line-width", type=int, help="define line width", default=1)
-parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#333333')
+parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#222222')
 parser.add_argument("--horizontal", action="store_true", help="horizontal chart", default=False)
 parser.add_argument("--vertical", action="store_true", help="vertical chart", default=False)
 parser.add_argument("--range-mode", choices=['normal', 'tozero', 'nonnegative'], help="choose range mode", default='normal')
@@ -334,35 +334,55 @@ plotScript.write("""fig = plotly.subplots.make_subplots(
 )
 """)
 
-if args.lines:
-    for dataFrame in dataFrames:
-        for col in dataFrame['frame'].columns:
+traceIndex = 0
+for dataFrame in dataFrames:
+    showLegend = True if len(dataFrames) > 1 else False
+    for col, nextCol in zip(list(dataFrame['frame'].columns), list(dataFrame['frame'].columns)[1:] + [None]):
+        if (col == '_error'):
+            continue
+        if (nextCol == '_error'):
+            errors = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
+        else:
+            errors = None
+        if (args.lines):
             ydata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
             xdata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
             updateRange([xdata, ydata])
+        elif (args.bars):
+            ydata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
+            xdata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
+            updateRange([xdata, ydata])
+        elif (args.boxes or args.violins):
+            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
+            index = f"['{col}'] * {len(data)}"
+            ydata = index if not args.vertical else data
+            xdata = index if args.vertical else data
+            updateRange([xdata, ydata])
+
+        fillcolour = colours[colourIndex % len(colours)]
+        markercolour = colour.Color(args.line_colour)
+
+        if args.lines:
             plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='{col}',
     mode='{args.line_mode}',
     legendgroup='{col}',
-{colourComment}{colourComment}    line_color='{colours[colourIndex % len(colours)]}',
+{colourComment}{colourComment}    line_color='{fillcolour}',
     line_width={args.line_width},
     y={ydata},
     x={xdata},
     opacity={args.opacity},
-), row=1, col=1, secondary_y=False)
-""")
-            colourIndex += 1 if args.per_trace_colour else 0
-        colourIndex += 1 if args.per_dataset_colour else 0
-elif args.bars:
-    for dataFrame in dataFrames:
-        for col in dataFrame['frame'].columns:
-            fillcolour = colours[colourIndex % len(colours)]
-            markercolour = colour.Color(args.line_colour)
-            ydata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
-            xdata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
-            updateRange([xdata, ydata])
-
+    """)
+            if (errors is not None):
+                plotScript.write(f"""error_{'y' if args.horizontal else 'x'}=dict(
+        type='data',
+        symmetric=True,
+        array={errors},
+        visible=True
+    ),""")
+            plotScript.write("), row=1, col=1, secondary_y=False)\n")
+        elif args.bars:
             plotScript.write(f"""
 fig.add_trace(go.Bar(
     name='{col}',
@@ -374,23 +394,16 @@ fig.add_trace(go.Bar(
     y={ydata},
     x={xdata},
     opacity={args.opacity},
-), row=1, col=1, secondary_y=False)
-""")
-            colourIndex += 1 if args.per_trace_colour else 0
-        colourIndex += 1 if args.per_dataset_colour else 0
-    plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}')\n")
-elif args.boxes:
-    traceIndex = 0
-    for dataFrame in dataFrames:
-        showLegend = True if len(dataFrames) > 1 else False
-        for col in dataFrame['frame'].columns:
-            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
-            index = f"['{col}'] * {len(data)}"
-            ydata = index if not args.vertical else data
-            xdata = index if args.vertical else data
-            updateRange([xdata, ydata])
-
-            fillcolour = colours[colourIndex % len(colours)]
+    """)
+            if (errors is not None):
+                plotScript.write(f"""error_{'x' if args.horizontal else 'y'}=dict(
+        type='data',
+        symmetric=True,
+        array={errors},
+        visible=True
+    ),""")
+            plotScript.write("), row=1, col=1, secondary_y=False)\n")
+        elif args.boxes:
             markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Box(
@@ -408,9 +421,6 @@ fig.add_trace(go.Box(
     opacity={args.opacity},
 ), row=1, col=1, secondary_y=False)
 """)
-            showLegend = False
-            traceIndex += 1
-            colourIndex += 1 if args.per_trace_colour else 0
             if args.box_mean == 'dot':
                 plotScript.write(f"""
 fig.add_trace(go.Scatter(
@@ -424,25 +434,14 @@ fig.add_trace(go.Scatter(
 {colourComment}    line_color='{markercolour}'
 ), row=1, col=1, secondary_y=False)
 """)
-        colourIndex += 1 if args.per_dataset_colour else 0
-    plotScript.write(f"\nfig.update_layout(boxmode='{args.box_mode}')\n")
-elif args.violins:
-    traceIndex = 0
-    for dataFrame in dataFrames:
-        showLegend = True if len(dataFrames) > 1 else False
-        for col in dataFrame['frame'].columns:
-            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
-            index = f"['{col}'] * {len(data)}"
-            ydata = index if not args.vertical else data
-            xdata = index if args.vertical else data
-            updateRange([xdata, ydata])
 
-            side = 'both'
+        elif args.violins:
             if args.violin_mode == 'halfhalf':
                 side = 'negative' if colourIndex % 2 == 0 else 'positive'
             elif args.violin_mode[:4] == 'half':
                 side = 'positive'
-            fillcolour = colours[colourIndex % len(colours)]
+            else:
+                side = 'both'
             markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Violin(
@@ -460,19 +459,24 @@ fig.add_trace(go.Violin(
     opacity={args.opacity},
 ), row=1, col=1, secondary_y=False)
 """)
-            showLegend = False
-            traceIndex += 1
-            colourIndex += 1 if args.per_trace_colour else 0
-        colourIndex += 1 if args.per_dataset_colour else 0
 
+        showLegend = False
+        colourIndex += 1 if args.per_trace_colour else 0
+    colourIndex += 1 if args.per_dataset_colour else 0
+
+plotScript.write("\n\n")
+
+if args.boxes:
+    plotScript.write(f"fig.update_layout(boxmode='{args.box_mode}')\n")
+if args.bars:
+    plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}')\n")
+if args.violins:
     if (args.violin_mode == 'halfgroup'):
         args.violin_mode = 'group'
     elif (args.violin_mode[:4] == 'half'):
         args.violin_mode = 'overlay'
-    plotScript.write(f"\nfig.update_traces(scalemode='width', width={args.violin_width}, points=False)\n")
+    plotScript.write(f"fig.update_traces(scalemode='width', width={args.violin_width}, points=False)\n")
     plotScript.write(f"fig.update_layout(violinmode='{args.violin_mode}', violingap={args.violin_gap}, violingroupgap={args.violin_groupgap})\n")
-
-plotScript.write("\n\n")
 
 plotScript.write(f"\n# Layout of axes\n")
 plotScript.write(f"fig.update_layout(yaxis_type='{args.y_type}', xaxis_type='{args.x_type}')\n")

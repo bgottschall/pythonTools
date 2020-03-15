@@ -342,33 +342,34 @@ plotScript.write("""fig = plotly.subplots.make_subplots(
 traceIndex = 0
 for dataFrame in dataFrames:
     showLegend = True if len(dataFrames) > 1 else False
-    for colIndex, col in enumerate(dataFrame['frame'].columns):
+    for colIndex, _ in enumerate(dataFrame['frame'].columns):
+        col = str(dataFrame['frame'].columns[colIndex])
         errors = None
         bases = None
         labels = None
         if (col.startswith(args.special_column_character)):
             continue
         for nextColIndex in range(colIndex + 1, colIndex + 4 if colIndex + 4 <= len(dataFrame['frame'].columns) else len(dataFrame['frame'].columns)):
-            nextCol = dataFrame['frame'].columns[nextColIndex]
+            nextCol = str(dataFrame['frame'].columns[nextColIndex])
             if (not nextCol.startswith(args.special_column_character)):
                 continue
             if (nextCol == '_error') and (errors is None):
-                errors = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
+                errors = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
             elif (nextCol == '_base') and (bases is None):
-                bases = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
+                bases = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
             elif (nextCol == '_label') and (labels is None):
-                labels = list(dataFrame['frame'][nextCol])
+                labels = dataFrame['frame'].iloc[:, nextColIndex].values.tolist()
 
         if (args.lines):
-            ydata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
-            xdata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
+            ydata = dataFrame['frame'].iloc[:, colIndex].values.tolist() if not args.vertical else list(dataFrame['frame'].index)
+            xdata = dataFrame['frame'].iloc[:, colIndex].values.tolist() if args.vertical else list(dataFrame['frame'].index)
             updateRange([xdata, ydata])
         elif (args.bars):
-            ydata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
-            xdata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
+            ydata = dataFrame['frame'].iloc[:, colIndex].tolist() if args.vertical else list(dataFrame['frame'].index)
+            xdata = dataFrame['frame'].iloc[:, colIndex].tolist() if not args.vertical else list(dataFrame['frame'].index)
             updateRange([xdata, ydata])
         elif (args.boxes or args.violins):
-            data = [x for x in list(dataFrame['frame'][col]) if x is not None]
+            data = [x for x in dataFrame['frame'].iloc[:, colIndex].values.tolist() if x is not None]
             index = f"['{col}'] * {len(data)}"
             ydata = index if not args.vertical else data
             xdata = index if args.vertical else data

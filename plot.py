@@ -11,7 +11,7 @@ import subprocess
 import shutil
 import statistics
 
-range = [[None, None], [None, None]]
+_range = [[None, None], [None, None]]
 
 
 def isFloat(val):
@@ -25,17 +25,17 @@ def isFloat(val):
 
 
 def updateRange(dataList):
-    global range
-    if not range:
-        range = []
-    if len(range) < len(dataList):
-        range.extend([None, None] * (len(dataList) - len(range)))
+    global _range
+    if not _range:
+        _range = []
+    if len(_range) < len(dataList):
+        _range.extend([None, None] * (len(dataList) - len(_range)))
     for index, data in enumerate(dataList):
         if data is not None:
             scope = [x for x in data if isFloat(x)]
             if len(scope) > 0:
-                range[index][0] = min(scope) if range[index][0] is None else min(range[index][0], min(scope))
-                range[index][1] = max(scope) if range[index][1] is None else max(range[index][1], max(scope))
+                _range[index][0] = min(scope) if _range[index][0] is None else min(_range[index][0], min(scope))
+                _range[index][1] = max(scope) if _range[index][1] is None else max(_range[index][1], max(scope))
 
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
@@ -43,6 +43,7 @@ detectDelimiter = ['\t', ';', ' ', ',']
 
 parser = argparse.ArgumentParser(description="Visualize csv files")
 parser.add_argument("files", help="files to parse", nargs="+")
+parser.add_argument("--special-column-character", help="ignore lines starting with (default '_')", type=str, default='_')
 parser.add_argument("--ignore-line-start", help="ignore lines starting with (default '#')", type=str, default='#')
 parser.add_argument("--separator", help="data delimiter", type=str)
 parser.add_argument("--no-index", action="store_true", help="data has no index column", default=False)
@@ -59,9 +60,12 @@ parser.add_argument("--bars", action="store_true", help="produce a bar chart", d
 parser.add_argument("--violins", action="store_true", help="produce a violin chart", default=False)
 parser.add_argument("--boxes", action="store_true", help="produce a box chart", default=False)
 # Line plot specific options
-parser.add_argument("--line-mode", choices=['line', 'scatter', 'combined'], help="choose linemode", default='line')
+parser.add_argument("--line-mode", choices=['lines', 'markers', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode", default='lines')
+parser.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon", default='middle center')
+
 # Bar plot specific options
 parser.add_argument("--bar-mode", choices=['stack', 'group', 'overlay', 'relative'], help="choose barmode", default='group')
+parser.add_argument("--bar-text-position", choices=["inside", "outside", "auto", "none"], help="choose bar text position", default='none')
 # Violin plot specific options
 parser.add_argument("--violin-mode", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], help="choose violinmode", default='overlay')
 parser.add_argument("--violin-width", type=float, help="change violin widths", default=0)
@@ -70,6 +74,9 @@ parser.add_argument("--violin-group-gap", type=float, help="change gap between v
 # Box plot specific options
 parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean", default='dot')
+
+parser.add_argument("--show-errors", action="store_true", help="show errors if supplied", default=False)
+
 
 parser.add_argument("--line-width", type=int, help="define line width", default=1)
 parser.add_argument("--line-colour", type=str, help="define line colour (line charts are using just colour)", default='#222222')
@@ -208,8 +215,6 @@ if (args.legend_y < -2 or args.legend_y > 3):
 
 colourComment = '# ' if args.default_plotly_colours else ''
 
-args.line_mode = 'lines' if args.line_mode == 'line' else 'markers' if args.line_mode == 'scatter' else 'lines+markers'
-
 dataFrames = []
 
 # Start parsing the input files, first check if the separator was passed in manually and check if it was a tab
@@ -337,13 +342,23 @@ plotScript.write("""fig = plotly.subplots.make_subplots(
 traceIndex = 0
 for dataFrame in dataFrames:
     showLegend = True if len(dataFrames) > 1 else False
-    for col, nextCol in zip(list(dataFrame['frame'].columns), list(dataFrame['frame'].columns)[1:] + [None]):
-        if (col == '_error'):
+    for colIndex, col in enumerate(dataFrame['frame'].columns):
+        errors = None
+        bases = None
+        labels = None
+        if (col.startswith(args.special_column_character)):
             continue
-        if (nextCol == '_error'):
-            errors = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
-        else:
-            errors = None
+        for nextColIndex in range(colIndex + 1, colIndex + 4 if colIndex + 4 <= len(dataFrame['frame'].columns) else len(dataFrame['frame'].columns)):
+            nextCol = dataFrame['frame'].columns[nextColIndex]
+            if (not nextCol.startswith(args.special_column_character)):
+                continue
+            if (nextCol == '_error') and (errors is None):
+                errors = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
+            elif (nextCol == '_base') and (bases is None):
+                bases = [x if (x is not None) else 0 for x in list(dataFrame['frame'][nextCol])]
+            elif (nextCol == '_label') and (labels is None):
+                labels = list(dataFrame['frame'][nextCol])
+
         if (args.lines):
             ydata = list(dataFrame['frame'][col]) if not args.vertical else list(dataFrame['frame'].index)
             xdata = list(dataFrame['frame'][col]) if args.vertical else list(dataFrame['frame'].index)
@@ -371,17 +386,23 @@ fig.add_trace(go.Scatter(
 {colourComment}{colourComment}    line_color='{fillcolour}',
     line_width={args.line_width},
     y={ydata},
-    x={xdata},
-    opacity={args.opacity},
-    """)
+    x={xdata},""")
+            if (labels is not None):
+                plotScript.write(f"""
+    text={labels},
+    textposition='{args.line_text_position}',""")
             if (errors is not None):
-                plotScript.write(f"""error_{'y' if args.horizontal else 'x'}=dict(
+                plotScript.write(f"""
+    error_{'y' if args.horizontal else 'x'}=dict(
+        visible={args.show_errors},
         type='data',
         symmetric=True,
         array={errors},
-        visible=True
     ),""")
-            plotScript.write("), row=1, col=1, secondary_y=False)\n")
+            plotScript.write(f"""
+    opacity={args.opacity},
+), row=1, col=1, secondary_y=False)
+""")
         elif args.bars:
             plotScript.write(f"""
 fig.add_trace(go.Bar(
@@ -392,17 +413,26 @@ fig.add_trace(go.Bar(
     marker_line_width={args.line_width},
 {colourComment}    marker_line_color='{markercolour}',
     y={ydata},
-    x={xdata},
-    opacity={args.opacity},
-    """)
+    x={xdata},""")
+            if (labels is not None):
+                plotScript.write(f"""
+    text={labels},
+    textposition='{args.bar_text_position}',""")
+            if (bases is not None):
+                plotScript.write(f"""
+    base={bases},""")
             if (errors is not None):
-                plotScript.write(f"""error_{'x' if args.horizontal else 'y'}=dict(
+                plotScript.write(f"""
+    error_{'x' if args.horizontal else 'y'}=dict(
+        visible={args.show_errors},
         type='data',
         symmetric=True,
         array={errors},
-        visible=True
     ),""")
-            plotScript.write("), row=1, col=1, secondary_y=False)\n")
+            plotScript.write(f"""
+    opacity={args.opacity},
+), row=1, col=1, secondary_y=False)
+""")
         elif args.boxes:
             markercolour = args.line_colour
             plotScript.write(f"""
@@ -537,18 +567,18 @@ plotScript.write(f"fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plo
 plotScript.write(f"# fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey')\n")
 plotScript.write(f"# fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey')\n")
 if args.y_range_from is not None or args.y_range_to is not None:
-    args.y_range_from = args.y_range_from if args.y_range_from is not None else range[1][0]
-    args.y_range_to = args.y_range_to if args.y_range_to is not None else range[1][1]
+    args.y_range_from = args.y_range_from if args.y_range_from is not None else _range[1][0]
+    args.y_range_to = args.y_range_to if args.y_range_to is not None else _range[1][1]
     plotScript.write(f"fig.update_yaxes(range=[{args.y_range_from}, {args.y_range_to}])\n")
 else:
-    plotScript.write(f"# fig.update_yaxes(range=[{range[1][0]}, {range[1][1]}])\n")
+    plotScript.write(f"# fig.update_yaxes(range=[{_range[1][0]}, {_range[1][1]}])\n")
 
 if args.x_range_from is not None or args.x_range_to is not None:
-    args.x_range_from = args.x_range_from if args.x_range_from is not None else range[0][0]
-    args.x_range_to = args.x_range_to if args.x_range_to is not None else range[0][1]
+    args.x_range_from = args.x_range_from if args.x_range_from is not None else _range[0][0]
+    args.x_range_to = args.x_range_to if args.x_range_to is not None else _range[0][1]
     plotScript.write(f"fig.update_xaxes(range=[{args.x_range_from}, {args.x_range_to}])\n")
 else:
-    plotScript.write(f"# fig.update_xaxes(range=[{range[0][0]}, {range[0][1]}])\n")
+    plotScript.write(f"# fig.update_xaxes(range=[{_range[0][0]}, {_range[0][1]}])\n")
 
 plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l if args.margin_l else 0 if args.y_title is None else None}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b if args.margin_b else 0 if args.x_title is None else None}, pad={args.margin_pad}))\n")
 

@@ -344,21 +344,24 @@ for dataFrame in dataFrames:
     showLegend = True if len(dataFrames) > 1 else False
     for colIndex, _ in enumerate(dataFrame['frame'].columns):
         col = str(dataFrame['frame'].columns[colIndex])
-        errors = None
-        bases = None
-        labels = None
+        _errors = None
+        _bases = None
+        _labels = None
+        _colours = None
         if (col.startswith(args.special_column_character)):
             continue
-        for nextColIndex in range(colIndex + 1, colIndex + 4 if colIndex + 4 <= len(dataFrame['frame'].columns) else len(dataFrame['frame'].columns)):
+        for nextColIndex in range(colIndex + 1, colIndex + 5 if colIndex + 5 <= len(dataFrame['frame'].columns) else len(dataFrame['frame'].columns)):
             nextCol = str(dataFrame['frame'].columns[nextColIndex])
             if (not nextCol.startswith(args.special_column_character)):
                 continue
-            if (nextCol == '_error') and (errors is None):
-                errors = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
-            elif (nextCol == '_base') and (bases is None):
-                bases = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
-            elif (nextCol == '_label') and (labels is None):
-                labels = dataFrame['frame'].iloc[:, nextColIndex].values.tolist()
+            if (nextCol == '_error') and (_errors is None):
+                _errors = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
+            elif (nextCol == '_base') and (_bases is None):
+                _bases = [x if (x is not None) else 0 for x in dataFrame['frame'].iloc[:, nextColIndex].values.tolist()]
+            elif (nextCol == '_label') and (_labels is None):
+                _labels = dataFrame['frame'].iloc[:, nextColIndex].values.tolist()
+            elif (nextCol == '_colour') and (_colours is None):
+                _colours = dataFrame['frame'].iloc[:, nextColIndex].values.tolist()
 
         if (args.lines):
             ydata = dataFrame['frame'].iloc[:, colIndex].values.tolist() if not args.vertical else list(dataFrame['frame'].index)
@@ -383,22 +386,29 @@ for dataFrame in dataFrames:
 fig.add_trace(go.Scatter(
     name='{col}',
     mode='{args.line_mode}',
-    legendgroup='{col}',
+    legendgroup='{col}',""")
+            if (_colours is not None):
+                plotScript.write(f"""
+    marker_color={_colours},""")
+            else:
+                plotScript.write(f"""
+{colourComment}    marker_color='{fillcolour}',""")
+            plotScript(f"""
 {colourComment}{colourComment}    line_color='{fillcolour}',
     line_width={args.line_width},
     y={ydata},
     x={xdata},""")
-            if (labels is not None):
+            if (_labels is not None):
                 plotScript.write(f"""
-    text={labels},
+    text={_labels},
     textposition='{args.line_text_position}',""")
-            if (errors is not None):
+            if (_errors is not None):
                 plotScript.write(f"""
     error_{'y' if args.horizontal else 'x'}=dict(
         visible={args.show_errors},
         type='data',
         symmetric=True,
-        array={errors},
+        array={_errors},
     ),""")
             plotScript.write(f"""
     opacity={args.opacity},
@@ -409,26 +419,32 @@ fig.add_trace(go.Scatter(
 fig.add_trace(go.Bar(
     name='{col}',
     legendgroup='{col}',
-    orientation='{'v' if args.vertical else 'h'}',
-{colourComment}    marker_color='{fillcolour}',
+    orientation='{'v' if args.vertical else 'h'}',""")
+            if (_colours is not None):
+                plotScript.write(f"""
+    marker_color={_colours},""")
+            else:
+                plotScript.write(f"""
+{colourComment}    marker_color='{fillcolour}',""")
+                plotScript.write(f"""
     marker_line_width={args.line_width},
 {colourComment}    marker_line_color='{markercolour}',
     y={ydata},
     x={xdata},""")
-            if (labels is not None):
+            if (_labels is not None):
                 plotScript.write(f"""
-    text={labels},
+    text={_labels},
     textposition='{args.bar_text_position}',""")
-            if (bases is not None):
+            if (_bases is not None):
                 plotScript.write(f"""
-    base={bases},""")
-            if (errors is not None):
+    base={_bases},""")
+            if (_errors is not None):
                 plotScript.write(f"""
     error_{'x' if args.horizontal else 'y'}=dict(
         visible={args.show_errors},
         type='data',
         symmetric=True,
-        array={errors},
+        array={_errors},
     ),""")
             plotScript.write(f"""
     opacity={args.opacity},

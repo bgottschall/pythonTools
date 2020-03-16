@@ -75,6 +75,7 @@ parser.add_argument("--line-text-position", choices=["top left", "top center", "
 # Bar plot specific options
 parser.add_argument("--bar-mode", choices=['stack', 'group', 'overlay', 'relative'], help="choose barmode", default='group')
 parser.add_argument("--bar-text-position", choices=["inside", "outside", "auto", "none"], help="choose bar text position", default='none')
+parser.add_argument("--bar-width", type=float, help="bar widths", default=0.8)
 # Violin plot specific options
 parser.add_argument("--violin-mode", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], help="choose violinmode", default='overlay')
 parser.add_argument("--violin-width", type=float, help="change violin widths", default=0)
@@ -149,6 +150,11 @@ args = parser.parse_args()
 
 if (not args.files) or (len(args.files) <= 0):
     print("ERROR: unsufficient amount of csv files passed")
+    parser.print_help()
+    sys.exit(1)
+
+if (args.bar_width < 0 or args.bar_width > 1):
+    print("ERROR: 0 <= bar-width <= 1")
     parser.print_help()
     sys.exit(1)
 
@@ -450,7 +456,7 @@ fig.add_trace(go.Scatter(
             else:
                 plotScript.write(f"""
 {colourComment}    marker_color='{fillcolour}',""")
-            plotScript(f"""
+            plotScript.write(f"""
 {colourComment}{colourComment}    line_color='{fillcolour}',
     line_width={args.line_width},
     y={ydata},
@@ -487,7 +493,8 @@ fig.add_trace(go.Bar(
     marker_line_width={args.line_width},
 {colourComment}    marker_line_color='{markercolour}',
     y={ydata},
-    x={xdata},""")
+    x={xdata},
+    width={args.bar_width},""")
             if (_labels is not None):
                 plotScript.write(f"""
     text={_labels},
@@ -583,17 +590,20 @@ if args.violins:
     plotScript.write(f"fig.update_layout(violinmode='{args.violin_mode}', violingap={args.violin_gap}, violingroupgap={args.violin_groupgap})\n")
 
 plotScript.write(f"\n# Layout of axes\n")
-plotScript.write(f"fig.update_layout(yaxis_type='{args.y_type}', xaxis_type='{args.x_type}')\n")
 
 if (args.y_range_mode is None):
     args.y_range_mode = args.range_mode
 if (args.x_range_mode is None):
     args.x_range_mode = args.range_mode
 
-plotScript.write(f"fig.update_xaxes(rangemode='{args.x_range_mode}')\n")
-plotScript.write(f"fig.update_yaxes(rangemode='{args.y_range_mode}')\n")
-plotScript.write(f"# fig.update_xaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
-plotScript.write(f"# fig.update_yaxes(showline=True, linewidth=1, linecolor='#ffffff')\n")
+plotScript.write("fig.update_yaxes(domain=[0.0, 1.0], col=1, row=1)\n")
+plotScript.write("fig.update_xaxes(domain=[0.0, 1.0], col=1, row=1)\n")
+plotScript.write(f"fig.update_yaxes(type='{args.y_type}', col=1, row=1)\n")
+plotScript.write(f"fig.update_xaxes(type='{args.x_type}', col=1, row=1)\n")
+plotScript.write(f"fig.update_xaxes(rangemode='{args.x_range_mode}', col=1, row=1)\n")
+plotScript.write(f"fig.update_yaxes(rangemode='{args.y_range_mode}', col=1, row=1)\n")
+plotScript.write(f"# fig.update_xaxes(showline=True, linewidth=1, linecolor='#ffffff', col=1, row=1)\n")
+plotScript.write(f"# fig.update_yaxes(showline=True, linewidth=1, linecolor='#ffffff', col=1, row=1)\n")
 
 
 plotScript.write(f"\n# Axes Title\n")
@@ -650,9 +660,9 @@ else:
 if args.x_range_from is not None or args.x_range_to is not None:
     args.x_range_from = args.x_range_from if args.x_range_from is not None else _range[0][0]
     args.x_range_to = args.x_range_to if args.x_range_to is not None else _range[0][1]
-    plotScript.write(f"fig.update_xaxes(range=[{args.x_range_from}, {args.x_range_to}])\n")
+    plotScript.write(f"fig.update_xaxes(range=[{args.x_range_from}, {args.x_range_to}], col=1, row=1)\n")
 else:
-    plotScript.write(f"# fig.update_xaxes(range=[{_range[0][0]}, {_range[0][1]}])\n")
+    plotScript.write(f"# fig.update_xaxes(range=[{_range[0][0]}, {_range[0][1]}], col=1, row=1)\n")
 
 plotScript.write(f"fig.update_layout(margin=dict(t={0 if args.margin_t is None else args.margin_t}, l={args.margin_l if args.margin_l else 0 if args.y_title is None else None}, r={0 if args.margin_r is None else args.margin_r}, b={args.margin_b if args.margin_b else 0 if args.x_title is None else None}, pad={args.margin_pad}))\n")
 

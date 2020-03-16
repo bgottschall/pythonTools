@@ -10,6 +10,7 @@ import colour
 import subprocess
 import shutil
 import statistics
+import bz2
 
 _range = [[None, None], [None, None]]
 
@@ -46,14 +47,22 @@ parser.add_argument("files", help="files to parse", nargs="+")
 parser.add_argument("--special-column-character", help="ignore lines starting with (default '_')", type=str, default='_')
 parser.add_argument("--ignore-line-start", help="ignore lines starting with (default '#')", type=str, default='#')
 parser.add_argument("--separator", help="data delimiter", type=str)
-parser.add_argument("--no-index", action="store_true", help="data has no index column", default=False)
+parser.add_argument("--no-columns", action="store_true", help="data has no column row", default=False)
+parser.add_argument("--no-index-column", action="store_true", help="data has no index column", default=False)
+parser.add_argument("--index-icolumn", type=int, help="set index column after column indez", default=None)
+parser.add_argument("--index-column", help="set index column", default=None)
 parser.add_argument("--transpose", action="store_true", help="transpose data", default=False)
 parser.add_argument("--sort", action="store_true", help="sort the index or columns (for box and violin plot)", default=False)
 parser.add_argument("--sort-files", action="store_true", help="sort input files", default=False)
 parser.add_argument("--sort-column", type=int, help="sort after column (only compatible with line and bar plot)", default=0)
 parser.add_argument("--descending", action="store_true", help="sort descending", default=False)
+parser.add_argument("--split-icolumn", type=int, help="split dataset for each unique column value in column index", default=None)
+parser.add_argument("--split-column", help="split dataset for each unique column value in column name", default=None)
 
 parser.add_argument("--name", action='append', help="define names")
+parser.add_argument("--trace-name-column", action='store_true', help="use column as trace name (default for line and bar)", default=False)
+parser.add_argument("--trace-name-dataset", action='store_true', help="use dataset name as trace name (default for box and violin)", default=False)
+
 # Type of plots:
 parser.add_argument("--lines", action="store_true", help="produce a line chart", default=False)
 parser.add_argument("--bars", action="store_true", help="produce a bar chart", default=False)
@@ -213,6 +222,18 @@ if (args.legend_y < -2 or args.legend_y > 3):
     parser.print_help()
     sys.exit(1)
 
+
+if (args.lines or args.bars):
+    if (args.trace_name_column and args.trace_name_dataset):
+        args.trace_name_dataset = False
+    if (not args.trace_name_column and not args.trace_name_dataset):
+        args.trace_name_column = True
+else:
+    if (args.trace_name_column and args.trace_name_dataset):
+        args.trace_name_column = False
+    if (not args.trace_name_column and not args.trace_name_dataset):
+        args.trace_name_dataset = True
+
 colourComment = '# ' if args.default_plotly_colours else ''
 
 dataFrames = []
@@ -228,7 +249,10 @@ traceCount = 0
 for sFilename in args.files:
     localDelimiter = delimiter
     # Read in as utf-8 and replace windows crlf if necessary
-    sFile = open(sFilename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
+    if (sFilename.endswith('.bz2')):
+        sFile = bz2.BZ2File(sFilename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
+    else:
+        sFile = open(sFilename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
 
     # Check if we can detect the data delimiter if it was not passed in manually
     if localDelimiter is None:
@@ -253,7 +277,7 @@ for sFilename in args.files:
         for x in sFile.split('\n')
         if (len(x) > 0) and  # Ignore empty lines
         (len(args.ignore_line_start) > 0 and not x.startswith(args.ignore_line_start)) and  # Ignore lines starting with
-        (args.no_index or x.count(localDelimiter) > 0)  # Ignore lines which contain no data
+        (args.no_index_column or x.count(localDelimiter) > 0)  # Ignore lines which contain no data
     ]
     fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
     if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not args.no_index):
@@ -263,38 +287,71 @@ for sFilename in args.files:
     if (args.name and len(dataFrames) < len(args.name)):
         pName = args.name[len(dataFrames)]
 
-    if pName is None and (args.no_index or fData[0][0] is None or len(fData[0][0]) == 0):
+    if pName is None and (args.no_columns or args.no_index_column or fData[0][0] is None or len(fData[0][0]) == 0):
         pName = os.path.basename(sFilename)
 
     if pName is None:
         pName = fData[0][0]
 
-    pFrame = pandas.DataFrame(fData[1:])
-    if (not args.no_index):
-        fData[0][0] = 'indexCol'
-
-    pFrame.columns = fData[0]
-    if (not args.no_index):
-        pFrame.set_index('indexCol', inplace=True)
+    if (args.no_columns):
+        pFrame = pandas.DataFrame(fData)
+    else:
+        pFrame = pandas.DataFrame(fData[1:])
+        pFrame.columns = fData[0]
 
     if (args.transpose):
         pFrame = pFrame.T
 
+    # Drop only columns/rows NaN values and replace NaN with None
     pFrame.dropna(how='all', axis=0, inplace=True)
     pFrame = pFrame.where((pandas.notnull(pFrame)), None)
 
-    if args.sort:
-        # Density plots are sorted based on their column mean values
-        if (args.violins or args.boxes):
-            pFrame = pFrame[pFrame.mean(axis=0).sort_values(ascending=not args.descending).index]
-        else:
-            if (not args.no_index and args.sort_column == 0):
-                pFrame.sort_index(ascending=not args.descending, inplace=True)
-            else:
-                pFrame.sort_values(by=pFrame.columns[args.sort_column - 1], ascending=not args.descending, inplace=True)
+    pFrames = []
+    if (args.split_icolumn) or (args.split_column):
+        if (args.split_icolumn is not None and args.split_icolumn >= pFrame.shape[1]):
+            raise Exception(f"Split column index {args.split_icolumn} out of bounds in {sFilename}!")
+        if (args.split_column is not None and args.split_column not in pFrame.columns):
+            raise Exception(f"Split column {args.split_column} not found in {sFilename}!")
 
-    traceCount += pFrame.shape[1]
-    dataFrames.append({'name': pName, 'file': sFilename, 'frame': pFrame})
+        if (args.split_icolumn):
+            splitColumn = pFrame.columns[args.split_icolumn]
+        else:
+            splitColumn = args.split_column
+
+        for v in pFrame[splitColumn].unique():
+            pFrames.append({'name': v, 'frame': pFrame[pFrame[splitColumn] == v]})
+    else:
+        pFrames.append({'name': pName, 'frame': pFrame})
+
+    for ele in pFrames:
+        pFrame = ele['frame']
+        pName = ele['name']
+        if (not args.no_index_column):
+            if (args.index_icolumn is not None):
+                if (args.index_icolumn >= pFrame.shape[1]):
+                    raise Exception(f"Index column index {args.index_icolumn} out of bounds in {sFilename}!")
+                else:
+                    pFrame.set_index(pFrame.columns[args.index_icolumn], drop=True, inplace=True)
+            elif (args.index_column is not None):
+                if (args.index_column not in pFrame.columns):
+                    raise Exception(f"Index column {args.index_column} not found in {sFilename}!")
+                else:
+                    pFrame.set_index(args.index_column, drop=True, inplace=True)
+            else:
+                pFrame.set_index(pFrame.columns[0], drop=True, inplace=True)
+
+        if args.sort:
+            # Density plots are sorted based on their column mean values
+            if (args.violins or args.boxes):
+                pFrame = pFrame[pFrame.mean(axis=0).sort_values(ascending=not args.descending).index]
+            else:
+                if (not args.no_index_column and args.sort_column == 0):
+                    pFrame.sort_index(ascending=not args.descending, inplace=True)
+                else:
+                    pFrame.sort_values(by=pFrame.columns[args.sort_column - 1], ascending=not args.descending, inplace=True)
+
+        traceCount += len([x for x in pFrame.columns if not x.startswith(args.special_column_character)])
+        dataFrames.append({'name': pName, 'file': sFilename, 'frame': pFrame})
 
 if (args.sort_files):
     dataFrames.sort(key=lambda x: x['frame'].mean().mean(), reverse=args.descending)
@@ -384,9 +441,9 @@ for dataFrame in dataFrames:
         if args.lines:
             plotScript.write(f"""
 fig.add_trace(go.Scatter(
-    name='{col}',
-    mode='{args.line_mode}',
-    legendgroup='{col}',""")
+    name='{col if args.trace_name_column else dataFrame['name']}',
+    legendgroup='{col if args.trace_name_column else dataFrame['name']}',
+    mode='{args.line_mode}',""")
             if (_colours is not None):
                 plotScript.write(f"""
     marker_color={_colours},""")
@@ -417,8 +474,8 @@ fig.add_trace(go.Scatter(
         elif args.bars:
             plotScript.write(f"""
 fig.add_trace(go.Bar(
-    name='{col}',
-    legendgroup='{col}',
+    name='{col if args.trace_name_column else dataFrame['name']}',
+    legendgroup='{col if args.trace_name_column else dataFrame['name']}',
     orientation='{'v' if args.vertical else 'h'}',""")
             if (_colours is not None):
                 plotScript.write(f"""
@@ -454,8 +511,8 @@ fig.add_trace(go.Bar(
             markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Box(
-    name='{dataFrame['name']}',
-    legendgroup='{dataFrame['name']}',
+    name='{col if args.trace_name_column else dataFrame['name']}',
+    legendgroup='{col if args.trace_name_column else dataFrame['name']}',
     showlegend={showLegend},
     y={ydata},
     x={xdata},
@@ -471,8 +528,8 @@ fig.add_trace(go.Box(
             if args.box_mean == 'dot':
                 plotScript.write(f"""
 fig.add_trace(go.Scatter(
-    name='mean_{dataFrame['name']}',
-    legendgroup='{dataFrame['name']}',
+    name='mean_{col if args.trace_name_column else dataFrame['name']}',
+    legendgroup='{col if args.trace_name_column else dataFrame['name']}',
     showlegend=False,
     x={xdata if args.vertical else [statistics.mean(xdata)]},
     y={ydata if not args.vertical else [statistics.mean(ydata)]},
@@ -492,8 +549,8 @@ fig.add_trace(go.Scatter(
             markercolour = args.line_colour
             plotScript.write(f"""
 fig.add_trace(go.Violin(
-    name='{dataFrame['name']}',
-    legendgroup='{dataFrame['name']}',
+    name='mean_{col if args.trace_name_column else dataFrame['name']}',
+    legendgroup='{col if args.trace_name_column else dataFrame['name']}',
     showlegend={showLegend},
     scalegroup='trace{traceIndex}',
     y={ydata},

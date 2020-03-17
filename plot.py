@@ -188,7 +188,7 @@ parser.add_argument("--separator", help="data delimiter (default auto detection)
 parser.add_argument("--transpose", help="transpose data", default=False, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-columns", help="data has no column row", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-index", help="data has no index column", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--index-icolumn", help="set index column after column indez", type=int, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--index-icolumn", help="set index column after column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--index-column", help="set index column", default=None, type=str, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--split-icolumn", help="split dataset for each unique column value in column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--split-column", help="split dataset for each unique column value in column name", default=None, type=str, action=ChildAction, parent=inputFileArgument)
@@ -303,8 +303,8 @@ for input in args.input:
         options.horizontal = not options.vertical
 
 args.legend_show = not args.legend_hide
-args.legend_horizontal = True if not args.legend_vertical else False
 args.legend_vertical = True if not args.legend_horizontal else False
+args.legend_horizontal = True if not args.legend_vertical else False
 if args.legend_x is None:
     args.legend_x = 1.02 if args.legend_vertical else 0
 if args.legend_y is None:

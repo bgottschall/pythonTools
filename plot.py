@@ -11,6 +11,7 @@ import subprocess
 import shutil
 import statistics
 import bz2
+import random
 
 
 class ParentAction(argparse.Action):
@@ -53,7 +54,7 @@ class ChildAction(argparse.Action):
         items = getattr(namespace, self.dest)
         try:
             lastParent = items[-1]['children']
-        except StopIteration:
+        except:
             return
         action = self.get_action(parser)
         action(parser, lastParent, values, option_string)
@@ -180,7 +181,7 @@ parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose 
 parser.add_argument("--show-errors", help="show errors if supplied", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-width", help="define line width", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--line-colour", help="define line colour (line charts are using just colour)", type=colour.Color, default='#222222', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--line-colour", help="define line colour (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -281,7 +282,7 @@ for input in args.input:
     options.traceCount = 0
     options.frameCount = 0
     subFrames = []
-    for filename in input['value']:
+    for fileIndex, filename in enumerate(input['value']):
         if (not os.path.isfile(filename)):
             raise Exception(f'Could not find input file {filename}!')
 
@@ -290,31 +291,32 @@ for input in args.input:
         else:
             fFile = open(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
 
-            # Check if we can detect the data delimiter if it was not passed in manually
-        if options.separator is None:
+        localSeparator = options.separator
+        # Check if we can detect the data delimiter if it was not passed in manually
+        if localSeparator is None:
             # Try to find delimiters
             for tryDelimiter in detectDelimiter:
                 if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
-                    options.separator = tryDelimiter
+                    localSeparator = tryDelimiter
                     break
             # Fallback if there is just one column and no index column
-            options.separator = ' ' if options.separator is None and options.no_index else options.separator
-            if (options.separator is None):
+            localSeparator = ' ' if localSeparator is None and options.no_index else localSeparator
+            if (localSeparator is None):
                 raise Exception('Could not identify data separator, please specify it manually')
 
         # Data delimiters clean up, remove multiple separators and separators from the end
-        reDelimiter = re.escape(options.separator)
+        reDelimiter = re.escape(localSeparator)
         fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
         # Tab and space delimiters, replace multiple occurences
-        if options.separator == ' ' or options.separator == '\t':
-            fFile = re.sub(reDelimiter + '{2,}', options.separator, fFile)
+        if localSeparator == ' ' or localSeparator == '\t':
+            fFile = re.sub(reDelimiter + '{2,}', localSeparator, fFile)
         # Parse the file
         fData = [
-            ["NaN" if val.lower() in considerAsNaN else val for val in x.split(options.separator)]
+            ["NaN" if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
             for x in fFile.split('\n')
             if (len(x) > 0) and  # Ignore empty lines
             (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
-            (options.no_index or x.count(options.separator) > 0)  # Ignore lines which contain no data
+            (options.no_index or x.count(localSeparator) > 0)  # Ignore lines which contain no data
         ]
         fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
         if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
@@ -340,32 +342,45 @@ for input in args.input:
         frame = frame.where((pandas.notnull(frame)), None)
 
         if (options.split_icolumn is not None) or (options.split_column is not None):
-            if (options.split_icolumn is not None and options.split_icolumn >= frame.shape[1]):
-                raise Exception(f"Split column index {options.split_icolumn} out of bounds in {filename}!")
-            if (options.split_column is not None and options.split_column not in frame.columns):
-                raise Exception(f"Split column {options.split_column} not found in {filename}!")
-
+            iSplitColumn = None
             if (options.split_icolumn is not None):
-                options.split_column = frame.columns[options.split_icolumn]
+                if (options.split_icolumn >= frame.shape[1]):
+                    raise Exception(f"Split column index {options.split_icolumn} out of bounds in {filename}!")
+                else:
+                    iSplitColumn = options.split_icolumn
+            elif (options.split_column is not None):
+                if (options.split_column not in frame.columns):
+                    raise Exception(f"Split column {options.split_column} not found in {filename}!")
+                else:
+                    iSplitColumn = frame.columns.get_loc(options.split_column).start
 
-            for v in frame[options.split_column].unique():
-                subFrames.append(frame[frame[options.split_column] == v])
+            for v in frame.iloc[:, iSplitColumn].unique():
+                subFrames.append(frame[frame.iloc[:, iSplitColumn] == v])
         else:
             subFrames.append(frame)
 
     for frame in subFrames:
         if (not options.no_index):
+            iIndexColumn = 0
             if (options.index_icolumn is not None):
                 if (options.index_icolumn >= frame.shape[1]):
                     raise Exception(f"Index column index {options.index_icolumn} out of bounds in {filename}!")
                 else:
-                    options.index_column = frame.columns[options.index_icolumn]
+                    iIndexColumn = options.index_icolumn
             elif (options.index_column is not None):
                 if (options.index_column not in frame.columns):
                     raise Exception(f"Index column {options.index_column} not found in {filename}!")
-            else:
-                options.index_column = frame.columns[0]
-            frame.set_index(options.index_column, drop=True, inplace=True)
+                else:
+                    iIndexColumn = frame.columns.get_loc(options.index_column).start
+
+            newColumns = frame.columns.tolist()
+            uniqueColumnName = '_delete_column'
+            while uniqueColumnName in frame.columns:
+                uniqueColumnName += str(random.randrange(9999))
+            newColumns[iIndexColumn] = uniqueColumnName
+            frame.set_index(frame.iloc[:, iIndexColumn], inplace=True)
+            frame.columns = newColumns
+            frame.drop(uniqueColumnName, axis=1, inplace=True)
 
         if options.sort is not None:
             # Density plots are sorted based on their column mean values
@@ -486,8 +501,8 @@ for input in data:
             else:  # Box and Violin
                 data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
                 index = f"['{col}'] * {len(data)}"
-                ydata = index if not args.vertical else data
-                xdata = index if args.vertical else data
+                ydata = index if not options.vertical else data
+                xdata = index if options.vertical else data
 
             updateRange(plotRange, [xdata, ydata])
 
@@ -509,11 +524,11 @@ fig.add_trace(go.Scatter(
                 if (_colours is not None):
                     plotScript.write(f"""
     marker_color={_colours},
-    line_color='{fillcolour}',""")
+    line_color='{_colours}',""")
                 else:
                     plotScript.write(f"""
-    marker_color='{fillcolour}',
-    line_color='{fillcolour}',""")
+    marker_color='{fillcolour.hex}',
+    line_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
     line_width={options.line_width},
     y={ydata},
@@ -545,10 +560,10 @@ fig.add_trace(go.Bar(
     marker_color={_colours},""")
                 else:
                     plotScript.write(f"""
-    marker_color='{fillcolour}',""")
+    marker_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
+    marker_line_color='{markercolour.hex}',
     marker_line_width={options.line_width},
-    marker_line_color='{markercolour}',
     y={ydata},
     x={xdata},
     width={options.bar_width},""")
@@ -582,9 +597,9 @@ fig.add_trace(go.Box(
     x={xdata},
     boxpoints=False,
     boxmean={True if options.box_mean == 'line' else False},
-    fill_color='{fillcolour}',
+    fillcolor='{fillcolour.hex}',
+    line_color='{markercolour.hex}',
     line_width={args.line_width},
-    line_color='{markercolour}',
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y=False)
@@ -597,9 +612,9 @@ fig.add_trace(go.Scatter(
     showlegend=False,
     x={xdata if args.vertical else [statistics.mean(xdata)]},
     y={ydata if not args.vertical else [statistics.mean(ydata)]},
-    fill_color='{fillcolour}',
+    fillcolor='{fillcolour.hex}',
+    line_color='{markercolour.hex}'
     line_width={options.line_width},
-    line_color='{markercolour}'
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y=False)
 """)
@@ -620,9 +635,9 @@ fig.add_trace(go.Violin(
     scalegroup='trace{frameTraceIndex}',
     y={ydata},
     x={xdata},
-    fill_color='{fillcolour}',
+    fillcolor='{fillcolour.hex}',
+    line_color='{options.line_colour.hex}',
     line_width={options.line_width},
-    line_color='{options.line_colour}',
     side='{side}',
     scalemode='width',
     width={options.violin_width},

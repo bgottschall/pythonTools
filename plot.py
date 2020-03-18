@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 
-import sys
 import argparse
 import tempfile
 import pandas
@@ -13,50 +12,7 @@ import shutil
 import statistics
 import bz2
 
-# For argument parsing:
-from collections import OrderedDict
 
-class ParentActionBkp(argparse.Action):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, default=OrderedDict(), **kwargs)
-        self.children = []
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        items = getattr(namespace, self.dest)
-        nspace = type(namespace)()
-        for child in self.children:
-            selfetattr(nspace, child.name, child.default)
-        items[values] = nspace
-
-
-class ChildActionBkp(argparse.Action):
-
-    def __init__(self, *args, parent, sub_action='store', **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.dest, self.name = parent.dest, self.dest
-        self.action = sub_action
-        self._action = None
-        self.parent = parent
-
-        parent.children.append(self)
-
-    def get_action(self, parser):
-        if self._action is None:
-            action_cls = parser._registry_get('action', self.action, self.action)
-            self._action = action_cls(self.option_strings, self.name)
-        return self._action
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        items = getattr(namespace, self.dest)
-        try:
-            last_item = next(reversed(items.values()))
-        except StopIteration:
-            return
-        action = self.get_action(parser)
-        action(parser, last_item, values, option_string)
-
-       
 class ParentAction(argparse.Action):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, default=[], **kwargs)
@@ -71,8 +27,6 @@ class ParentAction(argparse.Action):
             else:
                 setattr(nspace, child.name, child.default)
         items.append({'value': values, 'children': nspace})
-
-
 
 
 class ChildAction(argparse.Action):
@@ -173,14 +127,14 @@ detectDelimiter = ['\t', ';', ' ', ',']
 parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
 parser.add_argument("--sort-files", help="sort input files", choices=['asc', 'desc'])
-parser.add_argument("-c", "--colour",  help="define colours", default=[], action='append', type=colour.Color)
+parser.add_argument("-c", "--colour", help="define colours", default=[], action='append', type=colour.Color)
 parser.add_argument("--colour-from", help="colour gradient start", default=colour.Color("#084A91"), type=colour.Color)
 parser.add_argument("--colour-to", help="colour gradient end", default=colour.Color("#97B5CA"), type=colour.Color)
 parser.add_argument("--per-trace-colours", help="one colours for each trace", action='store_true')
 parser.add_argument("--per-frame-colours", help="one colour to each input frame file", action='store_true')
 parser.add_argument("--per-input-colours", help="one colour to each input file", action='store_true')
 
-inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", action=ParentAction)
+inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction)
 # Per File Parsing Arguments
 parser.add_argument("--special-column-start", help="ignores lines starting with (default '_')", type=str, default='_', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-line-start", help="ignores lines starting with (default '#')", type=str, default='#', action=ChildAction, parent=inputFileArgument)
@@ -217,8 +171,8 @@ parser.add_argument("--bar-text-position", help="choose bar text position", choi
 
 parser.add_argument("--violin-mode", help="choose violinmode", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], default='overlay')
 parser.add_argument("--violin-width", help="change violin widths", type=float, default=0, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--violin-gap", help="change gap between violins (no compatible with violinwidth)", type=float, default=0.3, choices=Range(0,1))
-parser.add_argument("--violin-group-gap", help="change gap between violin groups (not compatible with violinwidth)", type=float, default=0.3, choices=Range(0,1))
+parser.add_argument("--violin-gap", help="change gap between violins (no compatible with violinwidth)", type=float, default=0.3, choices=Range(0, 1))
+parser.add_argument("--violin-group-gap", help="change gap between violin groups (not compatible with violinwidth)", type=float, default=0.3, choices=Range(0, 1))
 
 parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose boxmode", default='overlay')
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean", default='dot', action=ChildAction, parent=inputFileArgument)
@@ -228,30 +182,30 @@ parser.add_argument("--show-errors", help="show errors if supplied", default=Fal
 parser.add_argument("--line-width", help="define line width", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--line-colour", help="define line colour (line charts are using just colour)", type=colour.Color, default='#222222', action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--horizontal",    help="horizontal chart (default for line)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--vertical",      help="vertical chart (default for bar, box and violin)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-mode",  help="choose range mode for y-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-mode",  help="choose range mode for x-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-from",  help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-from",  help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-to",    help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-to",    help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-type",        help="choose type for x-axis", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-type",        help="choose type for y-axis", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-mode", help="choose range mode for y-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-mode", help="choose range mode for x-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-from", help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-from", help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-to", help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-to", help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-type", help="choose type for x-axis", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-type", help="choose type for y-axis", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-format", help="change format of x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-format", help="change format of y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks ", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks ", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks ", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks ", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-title",       help="x-axis title", default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-title",       help="y-axis title", default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-hide",        help="hide x-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-hide",        help="hide y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--opacity",       help="colour opacity (default 0.8 for overlay modes)", type=float, choices=Range(0,1), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-title", help="x-axis title", default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-title", help="y-axis title", default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-hide", help="hide x-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-hide", help="hide y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes)", type=float, choices=Range(0, 1), default=None, action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--x-share",       help="share subplot x-axis", default=False, action="store_true")
-parser.add_argument("--y-share",       help="share subplot y-axis", default=False, action="store_true")
+parser.add_argument("--x-share", help="share subplot x-axis", default=False, action="store_true")
+parser.add_argument("--y-share", help="share subplot y-axis", default=False, action="store_true")
 parser.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots", default=0.0, choices=Range(0, 1))
 parser.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots", default=0.0, choices=Range(0, 1))
 parser.add_argument("--font-size", type=int, help="font size", default=12)
@@ -267,12 +221,12 @@ parser.add_argument("--legend-show", help="forces legend to show up", default=Fa
 parser.add_argument("--legend-vertical", help="horizontal legend", default=False, action="store_true")
 parser.add_argument("--legend-horizontal", help="vertical legend", default=False, action="store_true")
 
-parser.add_argument("--margins", help="sets all margins", type=int, choices=Range(1,None), default=None)
-parser.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(1,None), default=None)
+parser.add_argument("--margins", help="sets all margins", type=int, choices=Range(1, None), default=None)
+parser.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(1, None), default=None)
 parser.add_argument("--margin-r", help="sets right margin", type=int, choices=Range(1, None), default=None)
 parser.add_argument("--margin-t", help="sets top margin", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=Range(1,None), default=None)
-parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(1,None), default=None)
+parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=Range(1, None), default=None)
+parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(1, None), default=None)
 
 parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
@@ -323,79 +277,81 @@ defaultTopMargin = False
 defaultPadMargin = False
 
 for input in args.input:
-    filename = input['value']
     options = input['children']
     options.traceCount = 0
     options.frameCount = 0
-    # Read in as utf-8 and replace windows crlf if necessary
-    if (filename.endswith('.bz2')):
-        fFile = bz2.BZ2File(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
-    else:
-        fFile = open(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
-
-    # Check if we can detect the data delimiter if it was not passed in manually
-    if options.separator is None:
-        # Try to find delimiters
-        for tryDelimiter in detectDelimiter:
-            if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
-                options.separator = tryDelimiter
-                break
-        # Fallback if there is just one column and no index column
-        options.separator = ' ' if options.separator is None and options.no_index else options.separator
-        if (options.separator is None):
-            raise Exception('Could not identify data separator, please specify it manually')
-
-    # Data delimiters clean up, remove multiple separators and separators from the end
-    reDelimiter = re.escape(options.separator)
-    fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
-    # Tab and space delimiters, replace multiple occurences
-    if options.separator == ' ' or options.separator == '\t':
-        fFile = re.sub(reDelimiter + '{2,}', options.separator, fFile)
-    # Parse the file
-    fData = [
-        ["NaN" if val.lower() in considerAsNaN else val for val in x.split(options.separator)]
-        for x in fFile.split('\n')
-        if (len(x) > 0) and  # Ignore empty lines
-        (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
-        (options.no_index or x.count(options.separator) > 0)  # Ignore lines which contain no data
-    ]
-    fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
-    if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
-        raise Exception(f'Could not extract any data from file {filename}')
-
-    if options.name is None:
-        if (options.no_columns or options.no_index or fData[0][0] is None or len(fData[0][0]) == 0):
-            options.name = os.path.basename(filename)
-        else:
-            options.name = fData[0][0]
-
-    if (options.no_columns):
-        frame = pandas.DataFrame(fData)
-    else:
-        frame = pandas.DataFrame(fData[1:])
-        frame.columns = fData[0]
-
-    if (options.transpose):
-        frame = frame.T
-
-    # Drop only columns/rows NaN values and replace NaN with None
-    frame.dropna(how='all', axis=0, inplace=True)
-    frame = frame.where((pandas.notnull(frame)), None)
-
     subFrames = []
-    if (options.split_icolumn is not None) or (options.split_column is not None):
-        if (options.split_icolumn is not None and options.split_icolumn >= frame.shape[1]):
-            raise Exception(f"Split column index {options.split_icolumn} out of bounds in {filename}!")
-        if (options.split_column is not None and options.split_column not in frame.columns):
-            raise Exception(f"Split column {options.split_column} not found in {filename}!")
+    for filename in input['value']:
+        if (not os.path.isfile(filename)):
+            raise Exception(f'Could not find input file {filename}!')
 
-        if (options.split_icolumn):
-            options.split_column = frame.columns[options.split_icolumn]
+        if (filename.endswith('.bz2')):
+            fFile = bz2.BZ2File(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
+        else:
+            fFile = open(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
 
-        for v in frame[options.split_column].unique():
-            subFrames.append(frame[frame[options.split_column] == v])
-    else:
-        subFrames.append(frame)
+            # Check if we can detect the data delimiter if it was not passed in manually
+        if options.separator is None:
+            # Try to find delimiters
+            for tryDelimiter in detectDelimiter:
+                if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
+                    options.separator = tryDelimiter
+                    break
+            # Fallback if there is just one column and no index column
+            options.separator = ' ' if options.separator is None and options.no_index else options.separator
+            if (options.separator is None):
+                raise Exception('Could not identify data separator, please specify it manually')
+
+        # Data delimiters clean up, remove multiple separators and separators from the end
+        reDelimiter = re.escape(options.separator)
+        fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
+        # Tab and space delimiters, replace multiple occurences
+        if options.separator == ' ' or options.separator == '\t':
+            fFile = re.sub(reDelimiter + '{2,}', options.separator, fFile)
+        # Parse the file
+        fData = [
+            ["NaN" if val.lower() in considerAsNaN else val for val in x.split(options.separator)]
+            for x in fFile.split('\n')
+            if (len(x) > 0) and  # Ignore empty lines
+            (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
+            (options.no_index or x.count(options.separator) > 0)  # Ignore lines which contain no data
+        ]
+        fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
+        if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
+            raise Exception(f'Could not extract any data from file {filename}')
+
+        if options.name is None:
+            if (options.no_columns or options.no_index or fData[0][0] is None or len(fData[0][0]) == 0):
+                options.name = os.path.basename(filename)
+            else:
+                options.name = fData[0][0]
+
+        if (options.no_columns):
+            frame = pandas.DataFrame(fData)
+        else:
+            frame = pandas.DataFrame(fData[1:])
+            frame.columns = fData[0]
+
+        if (options.transpose):
+            frame = frame.T
+
+        # Drop only columns/rows NaN values and replace NaN with None
+        frame.dropna(how='all', axis=0, inplace=True)
+        frame = frame.where((pandas.notnull(frame)), None)
+
+        if (options.split_icolumn is not None) or (options.split_column is not None):
+            if (options.split_icolumn is not None and options.split_icolumn >= frame.shape[1]):
+                raise Exception(f"Split column index {options.split_icolumn} out of bounds in {filename}!")
+            if (options.split_column is not None and options.split_column not in frame.columns):
+                raise Exception(f"Split column {options.split_column} not found in {filename}!")
+
+            if (options.split_icolumn is not None):
+                options.split_column = frame.columns[options.split_icolumn]
+
+            for v in frame[options.split_column].unique():
+                subFrames.append(frame[frame[options.split_column] == v])
+        else:
+            subFrames.append(frame)
 
     for frame in subFrames:
         if (not options.no_index):
@@ -433,13 +389,13 @@ for input in args.input:
     if (options.row not in subplotGridDefinition):
         subplotGridDefinition[options.row] = {}
     if (options.col not in subplotGridDefinition[options.row]):
-        subplotGridDefinition[options.row][options.col] = {'rowspan' : options.rowspan, 'colspan': options.colspan}
+        subplotGridDefinition[options.row][options.col] = {'rowspan': options.rowspan, 'colspan': options.colspan}
     if (subplotGridDefinition[options.row][options.col]['rowspan'] < options.rowspan):
         subplotGridDefinition[options.row][options.col]['rowspan'] = options.rowspan
     if (subplotGridDefinition[options.row][options.col]['colspan'] < options.colspan):
         subplotGridDefinition[options.row][options.col]['rowspan'] = options.rowspan
 
-    data.append({'options' : options, 'frames' : subFrames})
+    data.append({'options': options, 'frames': subFrames})
 
 if (args.sort_files):
     data.sort(key=lambda x: numpy.array([y.mean() for y in x['frames']]).mean().mean(), reverse=args.sort_files == 'asc')
@@ -527,7 +483,7 @@ for input in data:
             elif (options.plot == 'bar'):
                 ydata = frame.iloc[:, colIndex].tolist() if options.vertical else list(frame.index)
                 xdata = frame.iloc[:, colIndex].tolist() if not options.vertical else list(frame.index)
-            else: # Box and Violin
+            else:  # Box and Violin
                 data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
                 index = f"['{col}'] * {len(data)}"
                 ydata = index if not args.vertical else data

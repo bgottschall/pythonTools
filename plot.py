@@ -490,7 +490,7 @@ for input in data:
                     continue
                 if (nextCol == options.special_column_start + 'error') and (_errors is None):
                     _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-                elif (nextCol == options.special_column_start + 'base') and (_bases is None):
+                elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
                     _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'label') and (_labels is None):
                     _labels = frame.iloc[:, nextColIndex].values.tolist()

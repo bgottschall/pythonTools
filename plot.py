@@ -164,6 +164,10 @@ parser.add_argument("--use-input-name", help="use input name for traces", defaul
 parser.add_argument("--trace-name", help="set trace name", default=[], type=str, sub_action="append", action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-mode", choices=['lines', 'markers', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode", default='lines', action=ChildAction, parent=inputFileArgument)
+parser.add_argument('--line-shape', choices=['linear', 'spline', 'hv', 'vh', 'hvh', 'vhv'], help='choose line shape', default='linear', action=ChildAction, parent=inputFileArgument)
+parser.add_argument('--line-dash', choices=['solid', 'dot', 'dash', 'longdash', 'dashdot', 'longdashdot'], help='choose line dash', default='solid', action=ChildAction, parent=inputFileArgument)
+parser.add_argument('--line-marker', choices=['circle', 'circle-open', 'circle-dot', 'circle-open-dot', 'square', 'square-open', 'square-dot', 'square-open-dot', 'diamond', 'diamond-open', 'diamond-dot', 'diamond-open-dot', 'cross', 'cross-open', 'cross-dot', 'cross-open-dot', 'x', 'x-open', 'x-dot', 'x-open-dot', 'triangle-up', 'triangle-up-open', 'triangle-up-dot', 'triangle-up-open-dot', 'triangle-down', 'triangle-down-open', 'triangle-down-dot', 'triangle-down-open-dot', 'triangle-left', 'triangle-left-open', 'triangle-left-dot', 'triangle-left-open-dot', 'triangle-right', 'triangle-right-open', 'triangle-right-dot', 'triangle-right-open-dot', 'triangle-ne', 'triangle-ne-open', 'triangle-ne-dot', 'triangle-ne-open-dot', 'triangle-se', 'triangle-se-open', 'triangle-se-dot', 'triangle-se-open-dot', 'triangle-sw', 'triangle-sw-open', 'triangle-sw-dot', 'triangle-sw-open-dot', 'triangle-nw', 'triangle-nw-open', 'triangle-nw-dot', 'triangle-nw-open-dot', 'pentagon', 'pentagon-open', 'pentagon-dot', 'pentagon-open-dot', 'hexagon', 'hexagon-open', 'hexagon-dot', 'hexagon-open-dot', 'hexagon2', 'hexagon2-open', 'hexagon2-dot', 'hexagon2-open-dot', 'octagon', 'octagon-open', 'octagon-dot', 'octagon-open-dot', 'star', 'star-open', 'star-dot', 'star-open-dot', 'hexagram', 'hexagram-open', 'hexagram-dot', 'hexagram-open-dot', 'star-triangle-up', 'star-triangle-up-open', 'star-triangle-up-dot', 'star-triangle-up-open-dot', 'star-triangle-down', 'star-triangle-down-open', 'star-triangle-down-dot', 'star-triangle-down-open-dot', 'star-square', 'star-square-open', 'star-square-dot', 'star-square-open-dot', 'star-diamond', 'star-diamond-open', 'star-diamond-dot', 'star-diamond-open-dot', 'diamond-tall', 'diamond-tall-open', 'diamond-tall-dot', 'diamond-tall-open-dot', 'diamond-wide', 'diamond-wide-open', 'diamond-wide-dot', 'diamond-wide-open-dot', 'hourglass', 'hourglass-open', 'bowtie', 'bowtie-open', 'circle-cross', 'circle-cross-open', 'circle-x', 'circle-x-open', 'square-cross', 'square-cross-open', 'square-x', 'square-x-open', 'diamond-cross', 'diamond-cross-open', 'diamond-x', 'diamond-x-open', 'cross-thin', 'cross-thin-open', 'x-thin', 'x-thin-open', 'asterisk', 'asterisk-open', 'hash', 'hash-open', 'hash-dot', 'hash-open-dot', 'y-up', 'y-up-open', 'y-down', 'y-down-open', 'y-left', 'y-left-open', 'y-right', 'y-right-open', 'line-ew', 'line-ew-open', 'line-ns', 'line-ns-open', 'line-ne', 'line-ne-open', 'line-nw', 'line-nw-open'], help='choose line marker', default='circle', action=ChildAction, parent=inputFileArgument)
+parser.add_argument('--line-marker-size', help='choose line marker size', type=int, default=6, choices=Range(0, None), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon", default='middle center', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--bar-mode", help="choose barmode", choices=['stack', 'group', 'overlay', 'relative'], default='group')
@@ -185,6 +189,7 @@ parser.add_argument("--line-colour", help="define line colour (line charts are u
 
 parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-range-mode", help="choose range mode for y-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-range-mode", help="choose range mode for x-axis", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-range-from", help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
@@ -232,8 +237,8 @@ parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range
 parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
 parser.add_argument("--height", help="plot height (not compatible with html)", type=int)
-parser.add_argument("--save-script", help="save self-contained plotting script", type=str, default=None)
-parser.add_argument("--save-only", action="store_true", help="do not execute plotting script (only comptabile with save-script)", default=False)
+parser.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
+parser.add_argument("--script-only", action="store_true", help="do not execute plotting script (only comptabile with save-script)", default=False)
 
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 
@@ -404,11 +409,11 @@ for input in args.input:
     if (options.row not in subplotGridDefinition):
         subplotGridDefinition[options.row] = {}
     if (options.col not in subplotGridDefinition[options.row]):
-        subplotGridDefinition[options.row][options.col] = {'rowspan': options.rowspan, 'colspan': options.colspan}
-    if (subplotGridDefinition[options.row][options.col]['rowspan'] < options.rowspan):
-        subplotGridDefinition[options.row][options.col]['rowspan'] = options.rowspan
-    if (subplotGridDefinition[options.row][options.col]['colspan'] < options.colspan):
-        subplotGridDefinition[options.row][options.col]['rowspan'] = options.rowspan
+        subplotGridDefinition[options.row][options.col] = {'rowspan': options.rowspan, 'colspan': options.colspan, 'secondary_y': options.y_secondary}
+
+    subplotGridDefinition[options.row][options.col]['rowspan'] = max(options.rowspan, subplotGridDefinition[options.row][options.col]['rowspan'])
+    subplotGridDefinition[options.row][options.col]['colspan'] = max(options.colspan, subplotGridDefinition[options.row][options.col]['colspan'])
+    subplotGridDefinition[options.row][options.col]['secondary_y'] = options.y_secondary or subplotGridDefinition[options.row][options.col]['secondary_y']
 
     data.append({'options': options, 'frames': subFrames})
 
@@ -422,12 +427,12 @@ colours = args.colour if args.colour else list(args.colour_from.range_to(args.co
 colourIndex = 0
 
 plotFd = None
-if (args.save_script is None):
-    args.save_only = False
+if (args.script is None):
+    args.script_only = False
     plotFd, plotScriptName = tempfile.mkstemp()
     plotScript = open(plotScriptName, 'w+')
 else:
-    plotScriptName = args.save_script
+    plotScriptName = args.script
     plotScript = open(plotScriptName, 'w+')
 
 plotScript.write("""#!/usr/bin/env python
@@ -449,7 +454,7 @@ for r in range(1, subplotGrid[1]['max'] + 1):
     plotScript.write("\n    [")
     for c in range(1, subplotGrid[0]['max'] + 1):
         if (r in subplotGridDefinition and c in subplotGridDefinition[r]):
-            plotScript.write(f"{{'rowspan': {subplotGridDefinition[r][c]['rowspan']}, 'colspan': {subplotGridDefinition[r][c]['colspan']}, 'secondary_y': False}},")
+            plotScript.write(f"{{'rowspan': {subplotGridDefinition[r][c]['rowspan']}, 'colspan': {subplotGridDefinition[r][c]['colspan']}, 'secondary_y': {subplotGridDefinition[r][c]['secondary_y']}}},")
         else:
             plotScript.write("None,")
     plotScript.write("],")
@@ -540,6 +545,9 @@ fig.add_trace(go.Scatter(
     marker_color='{fillcolour.hex}',
     line_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
+    marker_symbol='{options.line_marker}',
+    marker_size={options.line_marker_size},
+    line_dash='{options.line_dash}',
     line_width={options.line_width},
     y={ydata},
     x={xdata},""")
@@ -557,7 +565,7 @@ fig.add_trace(go.Scatter(
     ),""")
                 plotScript.write(f"""
     opacity={options.opacity},
-), col={options.col}, row={options.row}, secondary_y=False)
+), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
             elif options.plot == 'bar':
                 plotScript.write(f"""
@@ -594,7 +602,7 @@ fig.add_trace(go.Bar(
     ),""")
                 plotScript.write(f"""
     opacity={options.opacity},
-), col={options.col}, row={options.row}, secondary_y=False)
+), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
             elif options.plot == 'box':
                 markercolour = options.line_colour
@@ -612,7 +620,7 @@ fig.add_trace(go.Box(
     line_width={args.line_width},
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
-), col={options.col}, row={options.row}, secondary_y=False)
+), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
                 if options.box_mean == 'dot':
                     plotScript.write(f"""
@@ -626,7 +634,7 @@ fig.add_trace(go.Scatter(
     line_color='{markercolour.hex}'
     line_width={options.line_width},
     opacity={options.opacity},
-), col={options.col}, row={options.row}, secondary_y=False)
+), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
 
             elif options.plot == 'violin':
@@ -654,7 +662,7 @@ fig.add_trace(go.Violin(
     points=False,
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
-), col={options.col}, row={options.row}, secondary_y=False)
+), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
 
             showLegend = False
@@ -667,27 +675,27 @@ fig.add_trace(go.Violin(
     colourIndex += 1 if args.per_input_colours else 0
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")
-    plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y=False)\n")
+    plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0,0,0,0)', col={options.col}, row={options.row}, secondary_y=False)\n")
-    plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y=False)\n")
+    plotScript.write(f"fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0,0,0,0)', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if not options.x_hide else ''}fig.update_xaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col})\n")
-    plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y=False)\n")
+    plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if options.x_title is None else ''}fig.update_xaxes(title_text='{options.x_title}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(tickformat='{options.y_tick_format}', ticksuffix='{options.y_tick_suffix}', tickprefix='{options.y_tick_prefix}', col={options.col}, row={options.row}, secondary_y=False)\n")
+    plotScript.write(f"fig.update_yaxes(tickformat='{options.y_tick_format}', ticksuffix='{options.y_tick_suffix}', tickprefix='{options.y_tick_prefix}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(tickformat='{options.x_tick_format}', ticksuffix='{options.x_tick_suffix}', tickprefix='{options.x_tick_prefix}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"# fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey', col={options.col}, row={options.row}, secondary_y=False)\n")
+    plotScript.write(f"# fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"# fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey', col={options.col}, row={options.row})\n")
     if options.y_range_from is not None or options.y_range_to is not None:
         options.y_range_from = options.y_range_from if options.y_range_from is not None else plotRange[1]['min']
         options.y_range_to = options.y_range_to if options.y_range_to is not None else plotRange[1]['max']
-        plotScript.write(f"fig.update_yaxes(range=[{options.y_range_from}, {options.y_range_to}], col={options.col}, row={options.row}, secondary_y=False)\n")
+        plotScript.write(f"fig.update_yaxes(range=[{options.y_range_from}, {options.y_range_to}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     if options.x_range_from is not None or options.x_range_to is not None:
         options.x_range_from = options.x_range_from if options.x_range_from is not None else plotRange[0]['min']
         options.x_range_to = options.x_range_to if options.x_range_to is not None else plotRange[0]['max']
         plotScript.write(f"fig.update_xaxes(range=[{options.x_range_from}, {options.x_range_to}], col={options.col}, row={options.row})\n")
-    plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y=False)\n")
-    plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y=False)\n")
+    plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write("\n\n")
 
 plotScript.write("\n\n")
@@ -812,9 +820,9 @@ except Exception:
 """)
 
 plotScript.close()
-if (not args.save_only):
+if (not args.script_only):
     subprocess.check_call(['python', plotScriptName])
-if (args.save_script is None):
+if (args.script is None):
     os.close(plotFd)
     os.remove(plotScriptName)
 else:

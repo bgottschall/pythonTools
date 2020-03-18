@@ -54,7 +54,7 @@ class ChildAction(argparse.Action):
         items = getattr(namespace, self.dest)
         try:
             lastParent = items[-1]['children']
-        except:
+        except Exception:
             return
         action = self.get_action(parser)
         action(parser, lastParent, values, option_string)
@@ -110,8 +110,8 @@ def updateRange(_range, dataList):
             a['min'] = None
         if 'max' not in a:
             a['max'] = None
-    if len(_range) < len(dataList):
-        _range.extend([{'min': None, 'max': None}] * (len(dataList) - len(_range)))
+    while len(_range) < len(dataList):
+        _range.extend([{'min': None, 'max': None}])
     for index, data in enumerate(dataList):
         if data is not None:
             if type(data) != list:
@@ -495,16 +495,26 @@ for input in data:
             if (options.plot == 'line'):
                 ydata = frame.iloc[:, colIndex].values.tolist() if not options.vertical else list(frame.index)
                 xdata = frame.iloc[:, colIndex].values.tolist() if options.vertical else list(frame.index)
+                updateRange(plotRange, [xdata, ydata])
             elif (options.plot == 'bar'):
                 ydata = frame.iloc[:, colIndex].tolist() if options.vertical else list(frame.index)
                 xdata = frame.iloc[:, colIndex].tolist() if not options.vertical else list(frame.index)
+                if _bases is not None:
+                    rxdata = xdata
+                    rydata = ydata
+                    if (options.horizontal):
+                        rxdata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(xdata, _bases)]
+                    else:
+                        rydata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(ydata, _bases)]
+                    updateRange(plotRange, [rxdata, rydata])
+                else:
+                    updateRange(plotRange, [xdata, ydata])
             else:  # Box and Violin
                 data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
                 index = f"['{col}'] * {len(data)}"
                 ydata = index if not options.vertical else data
                 xdata = index if options.vertical else data
-
-            updateRange(plotRange, [xdata, ydata])
+                updateRange(plotRange, [xdata, ydata])
 
             fillcolour = colours[colourIndex % len(colours)]
             markercolour = colour.Color(options.line_colour)

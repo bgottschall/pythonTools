@@ -352,7 +352,7 @@ for input in args.input:
                 if (options.split_column not in frame.columns):
                     raise Exception(f"Split column {options.split_column} not found in {filename}!")
                 else:
-                    iSplitColumn = frame.columns.get_loc(options.split_column).start
+                    iSplitColumn = frame.columns.tolist().index(options.split_column)
 
             for v in frame.iloc[:, iSplitColumn].unique():
                 subFrames.append(frame[frame.iloc[:, iSplitColumn] == v])
@@ -371,7 +371,7 @@ for input in args.input:
                 if (options.index_column not in frame.columns):
                     raise Exception(f"Index column {options.index_column} not found in {filename}!")
                 else:
-                    iIndexColumn = frame.columns.get_loc(options.index_column).start
+                    iIndexColumn = frame.columns.tolist().index(options.index_column)
 
             newColumns = frame.columns.tolist()
             uniqueColumnName = '_delete_column'

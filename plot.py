@@ -213,6 +213,8 @@ parser.add_argument("--x-hide", help="hide x-axis", default=False, nargs=0, sub_
 parser.add_argument("--y-hide", help="hide y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes)", type=float, choices=Range(0, 1), default=None, action=ChildAction, parent=inputFileArgument)
 
+parser.add_argument("--x-master-title", help="x-axis master title", type=str, default=None)
+parser.add_argument("--y-master-title", help="y-axis master title", type=str, default=None)
 parser.add_argument("--x-share", help="share subplot x-axis", default=False, action="store_true")
 parser.add_argument("--y-share", help="share subplot y-axis", default=False, action="store_true")
 parser.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots", default=0.0, choices=Range(0, 1))
@@ -266,6 +268,8 @@ for input in args.input:
         options.vertical = options.plot != 'line'
         options.horizontal = not options.vertical
 
+args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
+args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
 args.legend_show = not args.legend_hide
 args.legend_vertical = True if not args.legend_horizontal else False
 args.legend_horizontal = True if not args.legend_vertical else False
@@ -492,6 +496,8 @@ plotScript.write(f"""fig = plotly.subplots.make_subplots(
     rows={subplotGrid[1]['max']},
     shared_xaxes={args.x_share},
     shared_yaxes={args.y_share},
+    y_title={args.y_master_title},
+    x_title={args.x_master_title},
     vertical_spacing={args.vertical_spacing},
     horizontal_spacing={args.horizontal_spacing},
     specs=[""")
@@ -778,7 +784,7 @@ plotScript.write("""
 # Execute addon file if found
 filename, fileext = os.path.splitext(__file__)
 if (os.path.exists(f'{filename}_addon{fileext}')):
-    exec(open(f'{filename}_addon.py').read())
+    exec(open(f'{filename}_addon{fileext}').read())
 """)
 
 plotScript.write("\n\n")

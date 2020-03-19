@@ -81,6 +81,9 @@ class Range(object):
     def __iter__(self):
         yield self
 
+    def __repr__(self):
+        return self.__str__()
+
     def __str__(self):
         if (self.start is None):
             return f'[,{self.end}]'
@@ -227,18 +230,19 @@ parser.add_argument("--legend-show", help="forces legend to show up", default=Fa
 parser.add_argument("--legend-vertical", help="horizontal legend", default=False, action="store_true")
 parser.add_argument("--legend-horizontal", help="vertical legend", default=False, action="store_true")
 
-parser.add_argument("--margins", help="sets all margins", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-r", help="sets right margin", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-t", help="sets top margin", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=Range(1, None), default=None)
-parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(1, None), default=None)
+parser.add_argument("--margins", help="sets all margins", type=int, choices=Range(0, None), default=None)
+parser.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(0, None), default=None)
+parser.add_argument("--margin-r", help="sets right margin", type=int, choices=Range(0, None), default=None)
+parser.add_argument("--margin-t", help="sets top margin", type=int, choices=Range(0, None), default=None)
+parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=Range(0, None), default=None)
+parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(0, None), default=None)
 
+parser.add_argument("--orca", help="plotly-orca binary required to output every format except html (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
 parser.add_argument("--height", help="plot height (not compatible with html)", type=int)
 parser.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
-parser.add_argument("--script-only", action="store_true", help="do not execute plotting script (only comptabile with save-script)", default=False)
+parser.add_argument("--script-only", action="store_true", help="do not execute plotting script (only comptabile with --script)", default=False)
 
 parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
 
@@ -436,8 +440,49 @@ else:
     plotScript = open(plotScriptName, 'w+')
 
 plotScript.write("""#!/usr/bin/env python
+import os
+import sys
+import shutil
+import subprocess
+import tempfile
 import plotly
 import plotly.graph_objects as go
+
+
+def checkOrca(orca = 'orca'):
+    if orca is not None:
+        orca = shutil.which(orca)
+    if orca is None:
+        raise Exception('Could not find plotly orca please provide it via --orca (https://github.com/plotly/orca)')
+    orcaOutput = subprocess.run([orca, '--help'], stdout=subprocess.PIPE, check=True)
+    if 'Plotly\\'s image-exporting utilities' not in orcaOutput.stdout.decode():
+       raise Exception(f'Invalid orca version {orca}. Please provide the correct version via --orca (https://github.com/plotly/orca)')
+    return orca
+
+
+def exportFigure(fig, width, height, exportFile, orca = 'orca'):
+    if exportFile.endswith('.html'):
+        plotly.offline.plot(fig, filename=exportFile, auto_open=False)
+        return
+    else:
+        tmpFd, tmpFile = tempfile.mkstemp()
+        try:
+            exportFile = os.path.abspath(exportFile)
+            exportDir = os.path.dirname(exportFile)
+            exportFilename = os.path.basename(exportFile)
+            _, fileExtension = os.path.splitext(exportFilename)
+            fileExtension = fileExtension.lstrip('.')
+
+            go.Figure(fig).write_json(tmpFile)
+            cmd = [orca, 'graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension, '--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
+            if width is not None:
+                cmd.extend(['--width', f'{width}'])
+            if height is not None:
+                cmd.extend(['--height', f'{height}'])
+            subprocess.run(cmd, check=True)
+        finally:
+            os.remove(tmpFile)
+
 """)
 
 plotScript.write("\n\nplotly.io.templates.default = 'plotly_white'\n")
@@ -731,7 +776,6 @@ plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size
 
 plotScript.write("""
 # Execute addon file if found
-import os
 filename, fileext = os.path.splitext(__file__)
 if (os.path.exists(f'{filename}_addon{fileext}')):
     exec(open(f'{filename}_addon.py').read())
@@ -739,71 +783,36 @@ if (os.path.exists(f'{filename}_addon{fileext}')):
 
 plotScript.write("\n\n")
 
-plotScript.write("""
+if args.orca is None:
+    orcaSearchPath = ['/opt/plotly-orca/orca', '/opt/plotly/orca', 'orca']
+    for executable in orcaSearchPath:
+        args.orca = shutil.which(executable)
+        if args.orca is not None:
+            break
 
-# To export to any other format than html, you need a special orca version from plotly
-# https://github.com/plotly/orca/releases
-orcaBin = None
-import os
-import shutil
-import subprocess
-import tempfile
+plotScript.write(f"""
+# Use the orca that is passed to the script
+orca = sys.argv[sys.argv.index('--orca') + 1] if '--orca' in sys.argv and sys.argv.index('--orca') + 1 < len(sys.argv) else None
 
-
-def determineOrca():
-    global orcaBin
-    if orcaBin is not None:
-        orcaBin = shutil.which(orcaBin)
-    else:
-        orcaBin = os.getenv('PLOTLY_ORCA')
-
-    if orcaBin is None:
-        for executable in ['/opt/plotly-orca/orca', '/opt/plotly/orca', '/opt/orca/orca', '/usr/bin/orca', 'orca']:
-            orcaBin = shutil.which(executable)
-            if orcaBin is not None:
-                break
-
-    if orcaBin is None:
-        raise Exception('Could not find orca!')
-
-
-def exportFigure(fig, width, height, exportFile):
-    if exportFile.endswith('.html'):
-        plotly.offline.plot(fig, filename=exportFile, auto_open=False)
-        return
-    else:
-        global orcaBin
-        if orcaBin is None:
-            determineOrca()
-
-        tmpFd, tmpFile = tempfile.mkstemp()
-        try:
-            exportFile = os.path.abspath(exportFile)
-            exportDir = os.path.dirname(exportFile)
-            exportFilename = os.path.basename(exportFile)
-            _, fileExtension = os.path.splitext(exportFilename)
-            fileExtension = fileExtension.lstrip('.')
-
-            go.Figure(fig).write_json(tmpFile)
-            cmd = [orcaBin, 'graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension, '--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
-            if width is not None:
-                cmd.extend(['--width', f'{width}'])
-            if height is not None:
-                cmd.extend(['--height', f'{height}'])
-            subprocess.run(cmd, check=True)
-        finally:
-            os.remove(tmpFile)
-
+# If nothing is passed, look up the environment variable PLOTLY_ORCA
+orca = os.getenv('PLOTLY_ORCA') if orca is None and os.getenv('PLOTLY_ORCA') is not None else orca
+""")
+if args.orca is not None:
+    plotScript.write(f"""
+# An initial orca version is provided by the plot author
+orca = '{args.orca}' if orca is None else orca
 
 """)
 
 if not args.output:
     plotScript.write("fig.show()\n")
-    plotScript.write(f"# exportFigure(fig, {args.width}, {args.height}, 'figure.pdf')\n")
+    plotScript.write("# orca = checkOrca(orca)\n")
+    plotScript.write(f"# exportFigure(fig, {args.width}, {args.height}, 'figure.pdf', orca)\n")
 else:
     plotScript.write("# fig.show()\n")
+    plotScript.write("orca = checkOrca(orca)\n")
     for output in args.output:
-        plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}')\nprint('Saved to {output}')\n")
+        plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}', orca)\nprint('Saved to {output}')\n")
     if not args.quiet:
         openWith = None
         for app in ['xdg-open', 'open', 'start']:

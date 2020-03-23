@@ -50,7 +50,7 @@ class ChildAction(argparse.Action):
         return self._action
 
     def __call__(self, parser, namespace, values, option_string=None):
-        ChildAction._adjusting_defaults[self.name] = values
+        ChildAction._adjusting_defaults[self.name] = True if self.action == 'store_true' else values
         items = getattr(namespace, self.dest)
         try:
             lastParent = items[-1]['children']
@@ -243,7 +243,7 @@ parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=R
 parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(0, None), default=None)
 
 parser.add_argument("--orca", help="plotly-orca binary required to output every format except html (https://github.com/plotly/orca)", type=str, default=None)
-parser.add_argument("-o", "--output", action='append', help="write plot to file (html, pdf, svg, png,...)")
+parser.add_argument("-o", "--output", default=[], nargs='+', help="write plot to file (html, pdf, svg, png,...)")
 parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
 parser.add_argument("--height", help="plot height (not compatible with html)", type=int)
 parser.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
@@ -350,14 +350,17 @@ for input in args.input:
             frame = pandas.DataFrame(fData)
         else:
             frame = pandas.DataFrame(fData[1:])
+
+        frame.dropna(how='all', axis=0, inplace=True)
+        frame = frame.where((pandas.notnull(frame)), None)
+
+        if (not options.no_columns):
             frame.columns = fData[0]
 
         if (options.transpose):
             frame = frame.T
 
         # Drop only columns/rows NaN values and replace NaN with None
-        frame.dropna(how='all', axis=0, inplace=True)
-        frame = frame.where((pandas.notnull(frame)), None)
 
         selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
 

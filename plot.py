@@ -478,14 +478,27 @@ else:
     plotScriptName = args.script
     plotScript = open(plotScriptName, 'w+')
 
-plotScript.write("""#!/usr/bin/env python
+plotScript.write(f"""#!/usr/bin/env python
 import os
 import sys
 import shutil
 import subprocess
 import tempfile
+import argparse
 import plotly
 import plotly.graph_objects as go
+
+parser = argparse.ArgumentParser(description="plots the contained figure")
+parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
+parser.add_argument("--width", help="width of output file (not html)", type=int, default={args.width})
+parser.add_argument("--height", help="height of output (not html)", type=int, default={args.height})
+parser.add_argument("--output", help="output file (html, png, jpg, pdf...)", type=str, nargs="+", default={args.output})
+parser.add_argument("--no-output", help="no output, just open an html plot", action="store_true", default=False)
+parser.add_argument("--quiet", help="do not automatically open output file", action="store_true", default={args.quiet})
+
+args = parser.parse_args()""")
+
+plotScript.write("""
 
 
 def checkOrca(orca = 'orca'):
@@ -524,9 +537,8 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
 
 """)
 
-plotScript.write("\n\nplotly.io.templates.default = 'plotly_white'\n")
-plotScript.write("# To add secondary axes, toggle the appropriate boolean values for traces and here:\n")
-plotScript.write(f"""fig = plotly.subplots.make_subplots(
+plotScript.write(f"""\n\nplotly.io.templates.default = 'plotly_white'
+fig = plotly.subplots.make_subplots(
     cols={subplotGrid[0]['max']},
     rows={subplotGrid[1]['max']},
     shared_xaxes={args.x_share},
@@ -819,10 +831,7 @@ plotScript.write("""
 # Execute addon file if found
 filename, fileext = os.path.splitext(__file__)
 if (os.path.exists(f'{filename}_addon{fileext}')):
-    exec(open(f'{filename}_addon{fileext}').read())
-""")
-
-plotScript.write("\n\n")
+    exec(open(f'{filename}_addon{fileext}').read())""")
 
 if args.orca is None:
     orcaSearchPath = ['/opt/plotly-orca/orca', '/opt/plotly/orca', 'orca']
@@ -832,41 +841,40 @@ if args.orca is None:
             break
 
 plotScript.write(f"""
-# Use the orca that is passed to the script
-orca = sys.argv[sys.argv.index('--orca') + 1] if '--orca' in sys.argv and sys.argv.index('--orca') + 1 < len(sys.argv) else None
 
-# If nothing is passed, look up the environment variable PLOTLY_ORCA
-orca = os.getenv('PLOTLY_ORCA') if orca is None and os.getenv('PLOTLY_ORCA') is not None else orca
-""")
+if args.orca is None and os.getenv('PLOTLY_ORCA') is not None:
+    args.orca = os.getenv('PLOTLY_ORCA')""")
+
 if args.orca is not None:
     plotScript.write(f"""
+
 # An initial orca version is provided by the plot author
-orca = '{args.orca}' if orca is None else orca
+if args.orca is None:
+    args.orca = '{args.orca}'""")
 
-""")
+plotScript.write(f"""
 
-if not args.output:
-    plotScript.write("fig.show()\n")
-    plotScript.write("# orca = checkOrca(orca)\n")
-    plotScript.write(f"# exportFigure(fig, {args.width}, {args.height}, 'figure.pdf', orca)\n")
+if not args.output or args.no_output:
+    fig.show()
 else:
-    plotScript.write("# fig.show()\n")
-    plotScript.write("orca = checkOrca(orca)\n")
-    for output in args.output:
-        plotScript.write(f"exportFigure(fig, {args.width if args.width else None}, {args.height if args.height else None}, '{output}', orca)\nprint('Saved to {output}')\n")
     if not args.quiet:
         openWith = None
         for app in ['xdg-open', 'open', 'start']:
             if shutil.which(app) is not None:
                 openWith = app
                 break
-        if openWith is not None:
-            for output in args.output:
-                plotScript.write(f"""
-try:
-    subprocess.check_call(['{openWith}', '{output}'], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
-except Exception:
-    print('Could not open {output}!')
+        if openWith is None:
+            args.quiet = True
+
+    orca = checkOrca(args.orca);
+    for output in args.output:
+        exportFigure(fig, args.width, args.height, output, args.orca)
+        print(f'Saved to {{output}}')
+        if not args.quiet:
+            try:
+                subprocess.check_call([openWith, output], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
+            except Exception:
+                print(f'Could not open {{output}}!')
 """)
 
 plotScript.close()

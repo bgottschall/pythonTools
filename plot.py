@@ -222,9 +222,9 @@ parser.add_argument("--x-share", help="share subplot x-axis", default=False, act
 parser.add_argument("--y-share", help="share subplot y-axis", default=False, action="store_true")
 parser.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots", default=0.0, choices=Range(0, 1))
 parser.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots", default=0.0, choices=Range(0, 1))
-parser.add_argument("--font-size", type=int, help="font size", default=12)
-parser.add_argument("--font-family", help="font family", default='"Open Sans", verdana, arial, sans-serif')
-parser.add_argument("--font-colour", help="font colour", default='#000000')
+parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default=12)
+parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
+parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
 
 parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
@@ -489,10 +489,13 @@ import plotly
 import plotly.graph_objects as go
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
+parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
+parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='{args.font_family}')
+parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=str, default='{args.font_colour.hex}')
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
-parser.add_argument("--width", help="width of output file (not html)", type=int, default={args.width})
-parser.add_argument("--height", help="height of output (not html)", type=int, default={args.height})
-parser.add_argument("--output", help="output file (html, png, jpg, pdf...)", type=str, nargs="+", default={args.output})
+parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
+parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
+parser.add_argument("--output", help="output file (html, png, jpg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
 parser.add_argument("--no-output", help="no output, just open an html plot", action="store_true", default=False)
 parser.add_argument("--quiet", help="do not automatically open output file", action="store_true", default={args.quiet})
 
@@ -824,7 +827,7 @@ args.margin_pad = args.margin_pad if args.margin_pad is not None else args.margi
 plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.margin_l}, r={args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 
 plotScript.write(f"\n# Plot Font\n")
-plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size={args.font_size}, color='{args.font_colour}'))\n")
+plotScript.write(f"fig.update_layout(font=dict(family=args.font_family, size=args.font_size, color=args.font_colour))\n")
 
 
 plotScript.write("""

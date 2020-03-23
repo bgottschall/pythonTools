@@ -16,13 +16,17 @@ if (not args.a or not args.b):
     parser.print_help()
     exit(1)
 
+if (len(args.a) <= 1 or len(args.b) <= 1):
+    print("ERROR: to few values provided!")
+    exit(1)
+
 if args.verbose:
     print(f"Distribution A: {args.a}")
     print(f"Distribution B: {args.b}")
 
 res = stats.ttest_ind(args.a, args.b, equal_var=(args.equal_variance))
 if args.verbose:
-    print(f"T-Statistics: {res[0]}")
-    print(f"P-Value: {res[1]}")
+    print(f"T-Statistics: {res[0]:.16f}")
+    print(f"P-Value: {res[1]:.16f}")
 else:
-    print(res[1])
+    print(f'{res[1]:.16f}')

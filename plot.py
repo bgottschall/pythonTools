@@ -11,7 +11,7 @@ import subprocess
 import shutil
 import statistics
 import bz2
-import random
+import sys
 
 
 class ParentAction(argparse.Action):
@@ -132,26 +132,29 @@ parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
 parser.add_argument("--sort-files", help="sort input files", choices=['asc', 'desc'])
 parser.add_argument("-c", "--colour", help="define colours", default=[], action='append', type=colour.Color)
-parser.add_argument("--colour-from", help="colour gradient start", default=colour.Color("#084A91"), type=colour.Color)
-parser.add_argument("--colour-to", help="colour gradient end", default=colour.Color("#97B5CA"), type=colour.Color)
-parser.add_argument("--per-trace-colours", help="one colours for each trace", action='store_true')
+parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#084A91"), type=colour.Color)
+parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#97B5CA"), type=colour.Color)
+parser.add_argument("--per-trace-colours", help="one colours for each trace (default)", action='store_true')
 parser.add_argument("--per-frame-colours", help="one colour to each input frame file", action='store_true')
 parser.add_argument("--per-input-colours", help="one colour to each input file", action='store_true')
 
-inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction)
+inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
 # Per File Parsing Arguments
-parser.add_argument("--special-column-start", help="ignores lines starting with (default '_')", type=str, default='_', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--ignore-line-start", help="ignores lines starting with (default '#')", type=str, default='#', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--separator", help="data delimiter (default auto detection)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--transpose", help="transpose data", default=False, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--no-columns", help="data has no column row", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--no-index", help="data has no index column", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--index-icolumn", help="set index column after column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--no-columns", help="do not use a column row", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--no-index", help="do not use a index column", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--index-icolumn", help="set index column after index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--index-column", help="set index column", default=None, type=str, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--split-icolumn", help="split dataset for each unique column value in column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--split-column", help="split dataset for each unique column value in column name", default=None, type=str, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort", help="sort input data", default=None, choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-column", help="sort after column (only compatible with line and bar plot)", type=int, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--split-icolumn", help="split data along column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--split-column", help="split datas along column", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-columns", help="select these column names", type=str, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort", help="sort data", default=None, choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-icolumn", help="sort after column index (default %(default)s)", type=int, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-column", help="sort after column", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--name", help="name input data", default=None, type=str, action=ChildAction, parent=inputFileArgument)
 
 # Per File Plotting Arguments:
@@ -163,8 +166,8 @@ parser.add_argument('--row', type=int, choices=Range(1, None), help='subplot row
 parser.add_argument('--rowspan', type=int, choices=Range(1, None), help='subplot rowspan', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--col', type=int, choices=Range(1, None), help='subplot column', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--colspan', type=int, choices=Range(1, None), help='subplot columnspan', default=1, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--use-input-name", help="use input name for traces", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--trace-name", help="set trace name", default=[], type=str, sub_action="append", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--use-name", help="use name for traces", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--trace-names", help="set individual trace names", default=[], type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-mode", choices=['lines', 'markers', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode", default='lines', action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--line-shape', choices=['linear', 'spline', 'hv', 'vh', 'hvh', 'vhv'], help='choose line shape', default='linear', action=ChildAction, parent=inputFileArgument)
@@ -256,6 +259,8 @@ args.per_input_colours = False if (args.per_trace_colours or args.per_frame_colo
 
 for input in args.input:
     options = input['children']
+    options.select_columns = list(set(options.select_columns))
+    options.select_icolumns = list(set(options.select_icolumns))
     if (options.opacity is None and
         ((options.plot == 'box' and 'overlay' in args.box_mode) or
          (options.plot == 'violin' and 'overlay' in args.violin_mode) or
@@ -354,6 +359,28 @@ for input in args.input:
         frame.dropna(how='all', axis=0, inplace=True)
         frame = frame.where((pandas.notnull(frame)), None)
 
+        selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
+
+        if len(options.select_icolumns) > 0:
+            selectCount = len(options.select_icolumns)
+            options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < frame.shape[1]]
+            if (selectCount != len(options.select_icolumns)):
+                print(f"WARNING: some selected column indexes where not found in {filename}", file=sys.stderr)
+
+        if len(options.select_columns) > 0:
+            selectedColumns = []
+            for i, c in enumerate(frame.columns):
+                if (c in options.select_columns):
+                    options.select_icolumns.append(i)
+                    selectedColumns.append(c)
+            options.select_icolumns = list(set(options.select_icolumns))
+            if (len(options.select_columns) != len(list(set(selectedColumns)))):
+                print(f"WARNING: some selected columns where not found in {filename}", file=sys.stderr)
+
+        if (len(options.select_icolumns) == 0):
+            if selectColumns:
+                raise Exception(f"No selected columns found in {filename}!")
+
         if (options.split_icolumn is not None) or (options.split_column is not None):
             iSplitColumn = None
             if (options.split_icolumn is not None):
@@ -372,42 +399,47 @@ for input in args.input:
         else:
             subFrames.append(frame)
 
-    for frame in subFrames:
+    del frame
+    for iFrame, _ in enumerate(subFrames):
         if (not options.no_index):
             iIndexColumn = 0
             if (options.index_icolumn is not None):
-                if (options.index_icolumn >= frame.shape[1]):
+                if (options.index_icolumn >= subFrames[iFrame].shape[1]):
                     raise Exception(f"Index column index {options.index_icolumn} out of bounds in {filename}!")
                 else:
                     iIndexColumn = options.index_icolumn
             elif (options.index_column is not None):
-                if (options.index_column not in frame.columns):
+                if (options.index_column not in subFrames[iFrame].columns):
                     raise Exception(f"Index column {options.index_column} not found in {filename}!")
                 else:
-                    iIndexColumn = frame.columns.tolist().index(options.index_column)
+                    iIndexColumn = subFrames[iFrame].columns.tolist().index(options.index_column)
 
-            newColumns = frame.columns.tolist()
-            uniqueColumnName = '_delete_column'
-            while uniqueColumnName in frame.columns:
-                uniqueColumnName += str(random.randrange(9999))
-            newColumns[iIndexColumn] = uniqueColumnName
-            frame.set_index(frame.iloc[:, iIndexColumn], inplace=True)
-            frame.columns = newColumns
-            frame.drop(uniqueColumnName, axis=1, inplace=True)
+            subFrames[iFrame].set_index(subFrames[iFrame].iloc[:, iIndexColumn], inplace=True)
+            # If the index column was explicitly selected, do not remove it
+            if iIndexColumn not in options.select_icolumns:
+                filterColumns = numpy.array([True] * subFrames[iFrame].shape[1])
+                filterColumns[iIndexColumn] = False
+                subFrames[iFrame] = subFrames[iFrame].loc[:, filterColumns]
+                if len(options.select_icolumns) > 0:
+                    options.select_icolumns = [i - 1 if i >= iIndexColumn else i for i in options.select_icolumns]
 
         if options.sort is not None:
             # Density plots are sorted based on their column mean values
             if (options.plot == 'violin' or options.plot == 'box'):
-                frame = frame[frame.mean(axis=0).sort_values(ascending=options.sort == 'asc').index]
+                subFrames[iFrame] = subFrames[iFrame][subFrames[iFrame].mean(axis=0).sort_values(ascending=options.sort == 'asc').index]
             else:
-                if (options.sort_column > frame.shape[1]):
+                if (options.sort_icolumn > subFrames[iFrame].shape[1]):
                     raise Exception(f"Sort column is out of bounds in {filename}!")
                 if (not options.no_index and options.sort_column == 0):
-                    frame.sort_index(ascending=options.sort == 'asc', inplace=True)
+                    subFrames[iFrame].sort_index(ascending=options.sort == 'asc', inplace=True)
                 else:
-                    frame.sort_values(by=frame.columns[options.sort_column - 1], ascending=not options.sort == 'asc', inplace=True)
+                    subFrames[iFrame].sort_values(by=subFrames[iFrame].columns[options.sort_icolumn - 1], ascending=not options.sort == 'asc', inplace=True)
 
-        options.traceCount += len([x for x in frame.columns if not x.startswith(options.special_column_start)])
+        if len(options.select_icolumns) > 0:
+            filterColumns = numpy.array([True if i in options.select_icolumns else False for i in range(subFrames[iFrame].shape[1])])
+            subFrames[iFrame] = subFrames[iFrame].loc[:, filterColumns]
+
+        options.traceCount += len([x for x in subFrames[iFrame].columns if not x.startswith(options.special_column_start)])
         options.frameCount += 1
     totalTraceCount += options.traceCount
     totalFrameCount += options.frameCount
@@ -576,9 +608,9 @@ for input in data:
             markercolour = colour.Color(options.line_colour)
 
             traceName = col
-            if (frameTraceIndex < len(options.trace_name)):
-                traceName = options.trace_name[frameTraceIndex]
-            elif (options.use_input_name):
+            if (frameTraceIndex < len(options.trace_names)):
+                traceName = options.trace_names[frameTraceIndex]
+            elif (options.use_name):
                 traceName = options.name
 
             if options.plot == 'line':

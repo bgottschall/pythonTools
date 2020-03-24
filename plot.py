@@ -194,8 +194,8 @@ parser.add_argument("--line-width", help="set line width (default %(default)s)",
 parser.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", type=float, choices=Range(0, 1), default=None, action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=None, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=None, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-title", help="x-axis title", default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-title", help="y-axis title", default=None, action=ChildAction, parent=inputFileArgument)
@@ -270,8 +270,11 @@ for input in args.input:
     elif options.opacity is None:
         options.opacity = 1.0
 
-    if (options.horizontal == options.vertical):
+    if options.horizontal == options.vertical:
         options.vertical = options.plot != 'line'
+        options.horizontal = not options.vertical
+    elif (options.horizontal is not None or options.vertical is not None):
+        options.vertical = not options.horizontal
         options.horizontal = not options.vertical
 
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
@@ -768,7 +771,7 @@ fig.add_trace(go.Box(
     boxmean={True if options.box_mean == 'line' else False},
     fillcolor='{fillcolour.hex}',
     line_color='{markercolour.hex}',
-    line_width={args.line_width},
+    line_width={options.line_width},
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
@@ -779,10 +782,10 @@ fig.add_trace(go.Scatter(
     name='mean_{traceName}',
     legendgroup='{traceName}',
     showlegend=False,
-    x={xdata if args.vertical else [statistics.mean(xdata)]},
-    y={ydata if not args.vertical else [statistics.mean(ydata)]},
+    x={xdata if options.vertical else [statistics.mean(xdata)]},
+    y={ydata if not options.vertical else [statistics.mean(ydata)]},
     fillcolor='{fillcolour.hex}',
-    line_color='{markercolour.hex}'
+    line_color='{markercolour.hex}',
     line_width={options.line_width},
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})

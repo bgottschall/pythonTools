@@ -226,14 +226,15 @@ parser.add_argument("--font-size", help="font size (default %(default)s)", type=
 parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
 
+parser.add_argument("--legend", help="quick setting the legend position", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default=None)
 parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
 parser.add_argument("--legend-y-anchor", help="set legend yanchor", choices=['auto', 'top', 'bottom', 'middle'], default=None)
 parser.add_argument("--legend-hide", help="hides legend", default=False, action="store_true")
 parser.add_argument("--legend-show", help="forces legend to show up", default=False, action="store_true")
-parser.add_argument("--legend-vertical", help="horizontal legend", default=False, action="store_true")
-parser.add_argument("--legend-horizontal", help="vertical legend", default=False, action="store_true")
+parser.add_argument("--legend-vertical", help="horizontal legend", default=None, action="store_true")
+parser.add_argument("--legend-horizontal", help="vertical legend", default=None, action="store_true")
 
 parser.add_argument("--margins", help="sets all margins", type=int, choices=Range(0, None), default=None)
 parser.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(0, None), default=None)
@@ -276,12 +277,72 @@ for input in args.input:
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
 args.legend_show = not args.legend_hide
-args.legend_vertical = True if not args.legend_horizontal else False
-args.legend_horizontal = True if not args.legend_vertical else False
+
+# Setting the legend orientation if it was explicitly set
+if args.legend_vertical is not None or args.legend_horizontal is not None:
+    args.legend_vertical = True if not args.legend_horizontal else False
+    args.legend_horizontal = True if not args.legend_vertical else False
+
+if args.legend is not None:
+    # If not legend orientation is set, set the default depending on the position
+    if args.legend_horizontal is None:
+        if args.legend.startswith('top') or args.legend.startswith('bottom') or args.legend.startswith('above') or args.legend.startswith('below'):
+            args.legend_horizontal = True
+        else:
+            args.legend_horizontal = False
+        args.legend_vertical = True if not args.legend_horizontal else False
+
+    lInside = ['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter' 'bottomleft', 'middleleft', 'center', 'middleright']
+    lOutside = ['aboveright', 'abovecenter', 'aboveleft', 'belowright', 'belowcenter', 'belowleft', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom']
+
+    if (args.legend_y_anchor is None):
+        if args.legend.startswith('middle') or args.legend.endswith('middle') or args.legend == 'center':
+            args.legend_y_anchor = 'middle'
+        elif args.legend.startswith('top') or args.legend.startswith('below'):
+            args.legend_y_anchor = 'top'
+        elif args.legend.startswith('bottom') or args.legend.startswith('above'):
+            args.legend_y_anchor = 'bottom'
+
+    if (args.legend_x_anchor is None):
+        if args.legend.endswith('center') or args.legend == 'center':
+            args.legend_x_anchor = 'center'
+        elif args.legend.endswith('right') or args.legend.startswith('left'):
+            args.legend_x_anchor = 'right'
+        elif args.legend.endswith('left') or args.legend.startswith('right'):
+            args.legend_x_anchor = 'left'
+
+    if (args.legend_y is None):
+        if args.legend.startswith('middle') or args.legend.endswith('middle') or args.legend == 'center':
+            args.legend_y = 0.5
+        elif args.legend.startswith('top') or args.legend.endswith('top'):
+            args.legend_y = 1.0
+        elif args.legend.startswith('bottom') or args.legend.endswith('bottom'):
+            args.legend_y = 0.0
+        elif args.legend.startswith('above'):
+            args.legend_y = 1.0
+        elif args.legend.startswith('below'):
+            args.legend_y = -0.05
+
+    if (args.legend_x is None):
+        if args.legend.endswith('center') or args.legend == 'center':
+            args.legend_x = 0.5
+        elif args.legend.endswith('left'):
+            args.legend_x = 0.0
+        elif args.legend.endswith('right'):
+            args.legend_x = 1.0
+        elif args.legend.startswith('right'):
+            args.legend_x = 1.02
+        elif args.legend.startswith('left'):
+            args.legend_x = -0.05
+
+if args.legend_horizontal is None and args.legend_vertical is None:
+    args.legend_vertical = True
+    args.legend_horizontal = False
+
 if args.legend_x is None:
     args.legend_x = 1.02 if args.legend_vertical else 0
 if args.legend_y is None:
-    args.legend_y = 1.00 if args.legend_vertical else -0.1
+    args.legend_y = 1.00 if args.legend_vertical else -0.05
 
 totalTraceCount = 0
 totalFrameCount = 0
@@ -490,8 +551,6 @@ import plotly.graph_objects as go
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
-parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='{args.font_family}')
-parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=str, default='{args.font_colour.hex}')
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
@@ -827,7 +886,7 @@ args.margin_pad = args.margin_pad if args.margin_pad is not None else args.margi
 plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.margin_l}, r={args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 
 plotScript.write(f"\n# Plot Font\n")
-plotScript.write(f"fig.update_layout(font=dict(family=args.font_family, size=args.font_size, color=args.font_colour))\n")
+plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size=args.font_size, color='{args.font_colour.hex}'))\n")
 
 
 plotScript.write("""

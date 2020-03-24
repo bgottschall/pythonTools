@@ -13,6 +13,8 @@ import statistics
 import bz2
 import sys
 
+stickyNone = None
+
 
 class ParentAction(argparse.Action):
     def __init__(self, *args, **kwargs):
@@ -23,7 +25,7 @@ class ParentAction(argparse.Action):
         items = getattr(namespace, self.dest)
         nspace = type(namespace)()
         for child in self.children:
-            if (child.name in ChildAction._adjusting_defaults):
+            if (not child.sticky_default and child.name in ChildAction._adjusting_defaults):
                 setattr(nspace, child.name, ChildAction._adjusting_defaults[child.name])
             else:
                 setattr(nspace, child.name, child.default)
@@ -33,14 +35,13 @@ class ParentAction(argparse.Action):
 class ChildAction(argparse.Action):
     _adjusting_defaults = {}
 
-    def __init__(self, *args, parent, sub_action='store', **kwargs):
+    def __init__(self, *args, parent, sub_action='store', sticky_default=False, **kwargs):
         super().__init__(*args, **kwargs)
-
         self.dest, self.name = parent.dest, self.dest
+        self.sticky_default = sticky_default
         self.action = sub_action
         self._action = None
         self.parent = parent
-
         parent.children.append(self)
 
     def get_action(self, parser):
@@ -55,6 +56,8 @@ class ChildAction(argparse.Action):
         try:
             lastParent = items[-1]['children']
         except Exception:
+            if (self.sticky_default):
+                raise Exception(f'parameter --{self.name} can only be used after --{self.parent.dest}!')
             return
         action = self.get_action(parser)
         action(parser, lastParent, values, option_string)
@@ -142,20 +145,20 @@ inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input f
 # Per File Parsing Arguments
 parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--transpose", help="transpose data", default=False, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--no-columns", help="do not use a column row", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--no-index", help="do not use a index column", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--index-icolumn", help="set index column after index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--index-column", help="set index column", default=None, type=str, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--split-icolumn", help="split data along column index", type=int, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--split-column", help="split datas along column", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--select-columns", help="select these column names", type=str, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort", help="sort data", default=None, choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-icolumn", help="sort after column index (default %(default)s)", type=int, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-column", help="sort after column", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--name", help="name input data", default=None, type=str, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--split-icolumn", help="split data along column index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--split-column", help="split datas along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-columns", help="select these column names", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort", help="sort data", default=None, choices=['asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-icolumn", help="sort after column index (default %(default)s)", sticky_default=True, type=int, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-column", help="sort after column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--name", help="name input data", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 # Per File Plotting Arguments:
 parser.add_argument('--plot', choices=['line', 'bar', 'box', 'violin'], help='plot type', default='line', action=ChildAction, parent=inputFileArgument)
@@ -166,8 +169,8 @@ parser.add_argument('--row', type=int, choices=Range(1, None), help='subplot row
 parser.add_argument('--rowspan', type=int, choices=Range(1, None), help='subplot rowspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--col', type=int, choices=Range(1, None), help='subplot column (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--colspan', type=int, choices=Range(1, None), help='subplot columnspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--use-name", help="use name for traces", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--trace-names", help="set individual trace names", default=[], type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--use-name", help="use name for traces", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--trace-names", help="set individual trace names", default=[], type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-mode", choices=['lines', 'markers', 'text', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode (default %(default)s)", default='lines', action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--line-shape', choices=['linear', 'spline', 'hv', 'vh', 'hvh', 'vhv'], help='choose line shape (default %(default)s)', default='linear', action=ChildAction, parent=inputFileArgument)
@@ -177,7 +180,7 @@ parser.add_argument('--line-marker-size', help='choose line marker size (default
 parser.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon (default %(default)s)", default='middle center', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'overlay', 'relative'], default='group')
-parser.add_argument("--bar-width", help="set explicit bar width", type=float, choices=Range(0,), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--bar-width", help="set explicit bar width", type=float, choices=Range(0,), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--bar-text-position", help="choose bar text position (default %(default)s)", choices=["inside", "outside", "auto", "none"], default='none', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--violin-mode", help="choose violinmode (default %(default)s)", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], default='overlay')
@@ -188,33 +191,34 @@ parser.add_argument("--violin-group-gap", help="change gap between violin groups
 parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose boxmode (default %(default)s)", default='overlay')
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean (default %(default)s)", default='dot', action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--show-errors", help="show errors if supplied", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--show-error", help="show error if supplied", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--hide-error", help="hide error", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-width", help="set line width (default %(default)s)", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", type=float, choices=Range(0, 1), default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", type=float, choices=Range(0, 1), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=None, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=None, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-title", help="x-axis title", default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-title", help="y-axis title", default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-title", help="x-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-title", help="y-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-type", help="choose type for x-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-type", help="choose type for y-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-range-mode", help="choose range mode for y-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-range-mode", help="choose range mode for x-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-from", help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-from", help="x-axis start", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-to", help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-to", help="x-axis end", type=float, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-from", help="x-axis start", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-from", help="x-axis start", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-to", help="x-axis end", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-to", help="x-axis end", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-hide", help="hide x-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-hide", help="hide y-axis", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--x-master-title", help="x-axis master title", type=str, default=None)
 parser.add_argument("--y-master-title", help="y-axis master title", type=str, default=None)
@@ -276,6 +280,13 @@ for input in args.input:
     elif (options.horizontal is not None or options.vertical is not None):
         options.vertical = not options.horizontal
         options.horizontal = not options.vertical
+
+    if options.show_error == options.hide_error:
+        options.show_error = False
+        options.hide_error = not options.show_error
+    elif (options.show_error is not None or options.hide_error is not None):
+        options.hide_error = not options.show_error
+        options.show_error = not options.hide_error
 
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
@@ -395,6 +406,11 @@ for input in args.input:
         if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
             raise Exception(f'Could not extract any data from file {filename}')
 
+        fData = numpy.array(fData)
+
+        if (options.transpose):
+            fData = numpy.transpose(fData)
+
         if options.name is None:
             if (options.no_columns or options.no_index or fData[0][0] is None or len(fData[0][0]) == 0):
                 options.name = os.path.basename(filename)
@@ -406,16 +422,12 @@ for input in args.input:
         else:
             frame = pandas.DataFrame(fData[1:])
 
+        # Drop only columns/rows NaN values and replace NaN with None
         frame.dropna(how='all', axis=0, inplace=True)
         frame = frame.where((pandas.notnull(frame)), None)
 
         if (not options.no_columns):
             frame.columns = fData[0]
-
-        if (options.transpose):
-            frame = frame.T
-
-        # Drop only columns/rows NaN values and replace NaN with None
 
         selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
 
@@ -497,7 +509,7 @@ for input in args.input:
             filterColumns = numpy.array([True if i in options.select_icolumns else False for i in range(subFrames[iFrame].shape[1])])
             subFrames[iFrame] = subFrames[iFrame].loc[:, filterColumns]
 
-        options.traceCount += len([x for x in subFrames[iFrame].columns if not x.startswith(options.special_column_start)])
+        options.traceCount += len([x for x in subFrames[iFrame].columns if not str(x).startswith(options.special_column_start)])
         options.frameCount += 1
     totalTraceCount += options.traceCount
     totalFrameCount += options.frameCount
@@ -712,7 +724,7 @@ fig.add_trace(go.Scatter(
                 if (_errors is not None):
                     plotScript.write(f"""
     error_{'y' if options.horizontal else 'x'}=dict(
-        visible={options.show_errors},
+        visible={options.show_error},
         type='data',
         symmetric=True,
         array={_errors},
@@ -749,7 +761,7 @@ fig.add_trace(go.Bar(
                 if (_errors is not None):
                     plotScript.write(f"""
     error_{'x' if options.horizontal else 'y'}=dict(
-        visible={options.show_errors},
+        visible={options.show_error},
         type='data',
         symmetric=True,
         array={_errors},

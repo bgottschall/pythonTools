@@ -321,7 +321,7 @@ for input in args.input:
     options.y_range_from = None if options.y_range_from == 'auto' else float(options.y_range_from)
     options.x_range_from = None if options.x_range_from == 'auto' else float(options.x_range_from)
     options.y_range_to = None if options.y_range_to == 'auto' else float(options.y_range_to)
-    options.x_range_to = None if options.x_range_to == 'auto' else float(options.y_range_to)
+    options.x_range_to = None if options.x_range_to == 'auto' else float(options.x_range_to)
     options.bar_width = None if options.bar_width == 'auto' else float(options.bar_width)
    
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None

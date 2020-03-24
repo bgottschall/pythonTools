@@ -231,8 +231,8 @@ parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
 parser.add_argument("--legend-y-anchor", help="set legend yanchor", choices=['auto', 'top', 'bottom', 'middle'], default=None)
-parser.add_argument("--legend-hide", help="hides legend", default=False, action="store_true")
-parser.add_argument("--legend-show", help="forces legend to show up", default=False, action="store_true")
+parser.add_argument("--legend-hide", help="hides legend", default=None, action="store_true")
+parser.add_argument("--legend-show", help="forces legend to show up", default=None, action="store_true")
 parser.add_argument("--legend-vertical", help="horizontal legend", default=None, action="store_true")
 parser.add_argument("--legend-horizontal", help="vertical legend", default=None, action="store_true")
 
@@ -276,7 +276,10 @@ for input in args.input:
 
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
-args.legend_show = not args.legend_hide
+
+if (args.legend_show is not None or args.legend_hide is not None):
+    args.legend_show = not args.legend_hide
+    args.legend_hide = not args.legend_show
 
 # Setting the legend orientation if it was explicitly set
 if args.legend_vertical is not None or args.legend_horizontal is not None:
@@ -291,9 +294,6 @@ if args.legend is not None:
         else:
             args.legend_horizontal = False
         args.legend_vertical = True if not args.legend_horizontal else False
-
-    lInside = ['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter' 'bottomleft', 'middleleft', 'center', 'middleright']
-    lOutside = ['aboveright', 'abovecenter', 'aboveleft', 'belowright', 'belowcenter', 'belowleft', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom']
 
     if (args.legend_y_anchor is None):
         if args.legend.startswith('middle') or args.legend.endswith('middle') or args.legend == 'center':

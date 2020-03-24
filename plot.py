@@ -226,7 +226,7 @@ parser.add_argument("--font-size", help="font size (default %(default)s)", type=
 parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
 
-parser.add_argument("--legend", help="quick setting the legend position", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default=None)
+parser.add_argument("--legend", help="quick setting the legend position", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
 parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
@@ -283,8 +283,8 @@ if (args.legend_show is not None or args.legend_hide is not None):
 
 # Setting the legend orientation if it was explicitly set
 if args.legend_vertical is not None or args.legend_horizontal is not None:
-    args.legend_vertical = True if not args.legend_horizontal else False
-    args.legend_horizontal = True if not args.legend_vertical else False
+    args.legend_vertical = not args.legend_horizontal
+    args.legend_horizontal = not args.legend_vertical
 
 if args.legend is not None:
     # If not legend orientation is set, set the default depending on the position
@@ -293,7 +293,7 @@ if args.legend is not None:
             args.legend_horizontal = True
         else:
             args.legend_horizontal = False
-        args.legend_vertical = True if not args.legend_horizontal else False
+    args.legend_vertical = not args.legend_horizontal
 
     if (args.legend_y_anchor is None):
         if args.legend.startswith('middle') or args.legend.endswith('middle') or args.legend == 'center':
@@ -334,15 +334,6 @@ if args.legend is not None:
             args.legend_x = 1.02
         elif args.legend.startswith('left'):
             args.legend_x = -0.05
-
-if args.legend_horizontal is None and args.legend_vertical is None:
-    args.legend_vertical = True
-    args.legend_horizontal = False
-
-if args.legend_x is None:
-    args.legend_x = 1.02 if args.legend_vertical else 0
-if args.legend_y is None:
-    args.legend_y = 1.00 if args.legend_vertical else -0.05
 
 totalTraceCount = 0
 totalFrameCount = 0

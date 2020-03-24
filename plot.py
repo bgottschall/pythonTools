@@ -13,7 +13,15 @@ import statistics
 import bz2
 import sys
 
-stickyNone = None
+
+def isFloat(val):
+    if val is None:
+        return False
+    try:
+        float(val)
+        return True
+    except ValueError:
+        return False
 
 
 class ParentAction(argparse.Action):
@@ -57,26 +65,38 @@ class ChildAction(argparse.Action):
             lastParent = items[-1]['children']
         except Exception:
             if (self.sticky_default):
-                raise Exception(f'parameter --{self.name} can only be used after --{self.parent.dest}!')
+                raise Exception(f'parameter --{self.name} can only be used after --{self.parent.dest}!') from None
+                exit(1)
             return
         action = self.get_action(parser)
         action(parser, lastParent, values, option_string)
 
 
 class Range(object):
-    def __init__(self, start=None, end=None):
-        if (start is None and end is None):
-            raise Exception("Invalid use of Range class!")
+    def __init__(self, start=None, end=None, orValues=None, start_inclusive=True, end_inclusive=True):
+        if (start is not None and not isFloat(start)) or (end is not None and not isFloat(start)) or (orValues is not None and type(orValues) != list):
+            raise Exception('invalid use of range object!')
+        self.start_inclusive = start_inclusive
+        self.end_inclusive = end_inclusive
         self.start = start
         self.end = end
+        self.orValues = orValues
 
     def __eq__(self, other):
-        if (self.start is None):
-            return other <= self.end
-        elif (self.end is None):
-            return self.start <= other
-        else:
-            return self.start <= other <= self.end
+        ret = False
+        if isFloat(other):
+            other = float(other)
+            if self.start is None and self.end is None:
+                ret = True
+            elif self.start is not None and self.end is not None:
+                ret = (self.start <= other if self.start_inclusive else self.start < other) and (other <= self.end if self.end_inclusive else other < self.end)
+            elif self.start is not None:
+                ret = (self.start <= other if self.start_inclusive else self.start < other)
+            elif self.end is not None:
+                ret = (other <= self.end if self.end_inclusive else other < self.end)
+        if not ret and self.orValues is not None:
+            ret = other in self.orValues
+        return ret
 
     def __contains__(self, item):
         return self.__eq__(item)
@@ -88,22 +108,15 @@ class Range(object):
         return self.__str__()
 
     def __str__(self):
-        if (self.start is None):
-            return f'[,{self.end}]'
-        elif (self.end is None):
-            return f'[{self.start},]'
+        if self.start is None and self.end is None:
+            ret = '-inf - +inf'
+        elif self.start is not None and self.end is not None:
+            ret = f'{self.start} - {self.end}'
+        elif (self.start is not None):
+            ret = f'{self.start} - +inf'
         else:
-            return f'[{self.start},{self.end}]'
-
-
-def isFloat(val):
-    if val is None:
-        return False
-    try:
-        float(val)
-        return True
-    except ValueError:
-        return False
+            ret = f'-inf - {self.end}'
+        return ret + (', or ' + ', '.join(self.orValues) if self.orValues is not None and len(self.orValues) > 0 else '')
 
 
 def updateRange(_range, dataList):
@@ -143,8 +156,8 @@ parser.add_argument("--per-input-colours", help="one colour to each input file",
 
 inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
 # Per File Parsing Arguments
-parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -162,15 +175,13 @@ parser.add_argument("--name", help="name input data", default=None, type=str, st
 
 # Per File Plotting Arguments:
 parser.add_argument('--plot', choices=['line', 'bar', 'box', 'violin'], help='plot type', default='line', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--use-name", help="use name for traces", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--trace-names", help="set individual trace names", default=[], sticky_default=True, type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
 
-# parser.add_argument('--plot-width', type=int, choices=Range(0, 1), help='subplot width (relative)', default=1, action=ChildAction, parent=inputFileArgument)
-# parser.add_argument('--plot-height', type=int, choices=Range(0, 1), help='subplot height (relative)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--row', type=int, choices=Range(1, None), help='subplot row (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--rowspan', type=int, choices=Range(1, None), help='subplot rowspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--col', type=int, choices=Range(1, None), help='subplot column (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--colspan', type=int, choices=Range(1, None), help='subplot columnspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--use-name", help="use name for traces", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--trace-names", help="set individual trace names", default=[], type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-mode", choices=['lines', 'markers', 'text', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode (default %(default)s)", default='lines', action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--line-shape', choices=['linear', 'spline', 'hv', 'vh', 'hvh', 'vhv'], help='choose line shape (default %(default)s)', default='linear', action=ChildAction, parent=inputFileArgument)
@@ -180,7 +191,7 @@ parser.add_argument('--line-marker-size', help='choose line marker size (default
 parser.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon (default %(default)s)", default='middle center', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'overlay', 'relative'], default='group')
-parser.add_argument("--bar-width", help="set explicit bar width", type=float, choices=Range(0,), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--bar-width", help="set explicit bar width", choices=Range(0, None, ['auto']), default='auto', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--bar-text-position", help="choose bar text position (default %(default)s)", choices=["inside", "outside", "auto", "none"], default='none', action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--violin-mode", help="choose violinmode (default %(default)s)", choices=['overlay', 'group', 'halfoverlay', 'halfgroup', 'halfhalf'], default='overlay')
@@ -191,15 +202,13 @@ parser.add_argument("--violin-group-gap", help="change gap between violin groups
 parser.add_argument("--box-mode", choices=['overlay', 'group'], help="choose boxmode (default %(default)s)", default='overlay')
 parser.add_argument("--box-mean", choices=['none', 'line', 'dot'], help="choose box mean (default %(default)s)", default='dot', action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--show-error", help="show error if supplied", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--hide-error", help="hide error", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--error", help="show error if supplied", default='hide', choices=['show', 'hide'], action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--line-width", help="set line width (default %(default)s)", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", type=float, choices=Range(0, 1), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", choices=Range(0, 1, ['auto']), action=ChildAction, parent=inputFileArgument)
 
-parser.add_argument("--horizontal", help="horizontal chart (default for line)", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--vertical", help="vertical chart (default for bar, box and violin)", default=None, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--orientation", help="set plot orientation", default='auto', choices=['vertical', 'v', 'horizontal', 'h', 'auto'], action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-title", help="x-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-title", help="y-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -207,10 +216,10 @@ parser.add_argument("--x-type", help="choose type for x-axis (default %(default)
 parser.add_argument("--y-type", help="choose type for y-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-range-mode", help="choose range mode for y-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-range-mode", help="choose range mode for x-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-from", help="x-axis start", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-from", help="x-axis start", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-range-to", help="x-axis end", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-range-to", help="x-axis end", type=float, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-from", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-from", help="y-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-range-to", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-range-to", help="y-axis end (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
@@ -266,28 +275,34 @@ for input in args.input:
     options = input['children']
     options.select_columns = list(set(options.select_columns))
     options.select_icolumns = list(set(options.select_icolumns))
-    if (options.opacity is None and
+    if (options.opacity == 'auto' and
         ((options.plot == 'box' and 'overlay' in args.box_mode) or
          (options.plot == 'violin' and 'overlay' in args.violin_mode) or
          (options.plot == 'bar' and 'overlay' in args.bar_mode))):
         options.opacity = 0.8
-    elif options.opacity is None:
+    elif options.opacity == 'auto':
         options.opacity = 1.0
 
-    if options.horizontal == options.vertical:
+    if options.orientation == 'auto':
         options.vertical = options.plot != 'line'
-        options.horizontal = not options.vertical
-    elif (options.horizontal is not None or options.vertical is not None):
-        options.vertical = not options.horizontal
-        options.horizontal = not options.vertical
+    elif options.orientation in ['vertical', 'v']:
+        options.vertical = True
+    else:
+        options.vertical = False
+    options.horizontal = not options.vertical
 
-    if options.show_error == options.hide_error:
+    if options.error == 'show':
+        options.show_error = True
+    else:
         options.show_error = False
-        options.hide_error = not options.show_error
-    elif (options.show_error is not None or options.hide_error is not None):
-        options.hide_error = not options.show_error
-        options.show_error = not options.hide_error
+    options.hide_error = not options.show_error
 
+    options.y_range_from = None if options.y_range_from == 'auto' else float(options.y_range_from)
+    options.x_range_from = None if options.x_range_from == 'auto' else float(options.x_range_from)
+    options.y_range_to = None if options.y_range_to == 'auto' else float(options.y_range_to)
+    options.x_range_to = None if options.x_range_to == 'auto' else float(options.y_range_to)
+    options.bar_width = None if options.bar_width == 'auto' else float(options.bar_width)
+   
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
 

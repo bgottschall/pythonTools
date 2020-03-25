@@ -593,7 +593,7 @@ if (args.sort_files):
 
 # Building up the colour array
 requiredColours = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else inputCount
-colours = args.colour if args.colour else list(args.colour_from.range_to(args.colour_to, requiredColours))
+colours = args.colours if args.colours else list(args.colour_from.range_to(args.colour_to, requiredColours))
 colourIndex = 0
 
 plotFd = None

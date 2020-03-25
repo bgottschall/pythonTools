@@ -1,6 +1,6 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
-# Copyright (c) 2020 Björn Gottschall <bjorn.gottschall@ntnu.no>
+# Copyright (c) 2020 Björn Gottschall
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -604,9 +604,9 @@ else:
     plotScriptName = args.script
     plotScript = open(plotScriptName, 'w+')
 
-plotScript.write(f"""#!/usr/bin/env python
+plotScript.write(f"""#!/usr/bin/env python3
 #
-# Copyright (c) 2020 Björn Gottschall <bjorn.gottschall@ntnu.no>
+# Copyright (c) 2020 Björn Gottschall
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal

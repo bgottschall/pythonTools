@@ -410,7 +410,6 @@ for input in args.input:
 
         if (filename.endswith('.bz2')):
             rawFile = bz2.BZ2File(filename, mode='rb')
-            fFile = bz2.BZ2File(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
         else:
             rawFile = open(filename, mode='rb')
 

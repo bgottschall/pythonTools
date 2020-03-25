@@ -432,7 +432,7 @@ for input in args.input:
             fFile = re.sub(reDelimiter + '{2,}', localSeparator, fFile)
         # Parse the file
         fData = [
-            ["NaN" if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
+            [None if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
             for x in fFile.split('\n')
             if (len(x) > 0) and  # Ignore empty lines
             (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
@@ -442,13 +442,13 @@ for input in args.input:
         if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
             raise Exception(f'Could not extract any data from file {filename}')
 
-        fData = numpy.array(fData)
+        fData = numpy.array(fData, dtype=object)
 
         if (options.transpose):
             fData = numpy.transpose(fData)
 
         if options.name is None:
-            if (options.no_columns or options.no_index or fData[0][0] is None or len(fData[0][0]) == 0):
+            if (options.no_columns or options.no_index or fData[0][0] is None or len(str(fData[0][0])) == 0):
                 options.name = os.path.basename(filename)
             else:
                 options.name = fData[0][0]
@@ -699,6 +699,8 @@ for input in data:
     for frame in input['frames']:
         showLegend = True if options.traceCount > 1 else False
         for colIndex, _ in enumerate(frame.columns):
+            fillcolour = colours[colourIndex % len(colours)]
+            markercolour = colour.Color(options.line_colour)
             col = str(frame.columns[colIndex])
             specialColumnCount = 4
             _errors = None
@@ -719,6 +721,7 @@ for input in data:
                     _labels = frame.iloc[:, nextColIndex].values.tolist()
                 elif (nextCol == options.special_column_start + 'colour') and (_colours is None):
                     _colours = frame.iloc[:, nextColIndex].values.tolist()
+                    _colours = [c if c is not None else fillcolour.hex for c in _colours]
 
             if (options.plot == 'line'):
                 ydata = frame.iloc[:, colIndex].values.tolist() if not options.vertical else list(frame.index)
@@ -743,9 +746,6 @@ for input in data:
                 ydata = index if not options.vertical else data
                 xdata = index if options.vertical else data
                 updateRange(plotRange, [xdata, ydata])
-
-            fillcolour = colours[colourIndex % len(colours)]
-            markercolour = colour.Color(options.line_colour)
 
             traceName = col
             if (frameTraceIndex < len(options.trace_names)):
@@ -833,7 +833,7 @@ fig.add_trace(go.Bar(
 fig.add_trace(go.Box(
     name='{traceName}',
     legendgroup='{traceName}',
-    showlegend={showLegend},
+    showlegend=True,
     y={ydata},
     x={xdata},
     boxpoints=False,
@@ -872,7 +872,7 @@ fig.add_trace(go.Scatter(
 fig.add_trace(go.Violin(
     name='{traceName}',
     legendgroup='{traceName}',
-    showlegend={showLegend},
+    showlegend=True,
     scalegroup='trace{frameTraceIndex}',
     y={ydata},
     x={xdata},
@@ -888,7 +888,6 @@ fig.add_trace(go.Violin(
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
 
-            showLegend = False
             traceIndex += 1
             frameTraceIndex += 1
             colourIndex += 1 if args.per_trace_colours else 0

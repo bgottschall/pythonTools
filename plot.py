@@ -679,7 +679,11 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
                 cmd.extend(['--width', f'{width}'])
             if height is not None:
                 cmd.extend(['--height', f'{height}'])
-            subprocess.run(cmd, check=True)
+            exportRun = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if exportRun.returncode != 0:
+                print(f'ERROR: failed to export figure to {exportFile}! Unsupported file format?')
+                print(exportRun.stderr.decode('utf-8'))
+                exit(1)
         finally:
             os.remove(tmpFile)
 

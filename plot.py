@@ -33,6 +33,7 @@ import shutil
 import statistics
 import bz2
 import sys
+import pickle
 
 
 def isFloat(val):
@@ -95,7 +96,7 @@ class ChildAction(argparse.Action):
 
 class Range(object):
     def __init__(self, start=None, end=None, orValues=None, start_inclusive=True, end_inclusive=True):
-        if (start is not None and not isFloat(start)) or (end is not None and not isFloat(start)) or (orValues is not None and type(orValues) != list):
+        if (start is not None and not isFloat(start)) or (end is not None and not isFloat(start)) or (orValues is not None and not isinstance(orValues, list)):
             raise Exception('invalid use of range object!')
         self.start_inclusive = start_inclusive
         self.end_inclusive = end_inclusive
@@ -141,10 +142,10 @@ class Range(object):
 
 
 def updateRange(_range, dataList):
-    if type(_range) != list:
+    if not isinstance(_range, list):
         raise Exception('updateRange needs a mutable list of min/max directories')
     for a in _range:
-        if type(a) != dict:
+        if not isinstance(a, dict):
             raise Exception('updateRange needs a mutable list of directories')
         if 'min' not in a:
             a['min'] = None
@@ -154,7 +155,7 @@ def updateRange(_range, dataList):
         _range.extend([{'min': None, 'max': None}])
     for index, data in enumerate(dataList):
         if data is not None:
-            if type(data) != list:
+            if not isinstance(data, list):
                 data = [data]
             scope = [x for x in data if isFloat(x)]
             if len(scope) > 0:
@@ -323,7 +324,7 @@ for input in args.input:
     options.y_range_to = None if options.y_range_to == 'auto' else float(options.y_range_to)
     options.x_range_to = None if options.x_range_to == 'auto' else float(options.x_range_to)
     options.bar_width = None if options.bar_width == 'auto' else float(options.bar_width)
-   
+
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
 
@@ -403,67 +404,92 @@ for input in args.input:
     options.frameCount = 0
     subFrames = []
     for fileIndex, filename in enumerate(input['value']):
+        fileSubFrames = []
         if (not os.path.isfile(filename)):
             raise Exception(f'Could not find input file {filename}!')
 
         if (filename.endswith('.bz2')):
+            rawFile = bz2.BZ2File(filename, mode='rb')
             fFile = bz2.BZ2File(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
         else:
-            fFile = open(filename, mode='rb').read().decode('utf-8').replace('\r\n', '\n')
+            rawFile = open(filename, mode='rb')
 
-        localSeparator = options.separator
-        # Check if we can detect the data delimiter if it was not passed in manually
-        if localSeparator is None:
-            # Try to find delimiters
-            for tryDelimiter in detectDelimiter:
-                if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
-                    localSeparator = tryDelimiter
-                    break
-            # Fallback if there is just one column and no index column
-            localSeparator = ' ' if localSeparator is None and options.no_index else localSeparator
-            if (localSeparator is None):
-                raise Exception('Could not identify data separator, please specify it manually')
+        frame = None
+        pickled = False
+        try:
+            frame = pickle.load(rawFile)
+        except Exception:
+            frame = None
+            rawFile.seek(0)
 
-        # Data delimiters clean up, remove multiple separators and separators from the end
-        reDelimiter = re.escape(localSeparator)
-        fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
-        # Tab and space delimiters, replace multiple occurences
-        if localSeparator == ' ' or localSeparator == '\t':
-            fFile = re.sub(reDelimiter + '{2,}', localSeparator, fFile)
-        # Parse the file
-        fData = [
-            [None if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
-            for x in fFile.split('\n')
-            if (len(x) > 0) and  # Ignore empty lines
-            (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
-            (options.no_index or x.count(localSeparator) > 0)  # Ignore lines which contain no data
-        ]
-        fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
-        if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
-            raise Exception(f'Could not extract any data from file {filename}')
+        if frame is not None:
+            if (not isinstance(frame, pandas.DataFrame)):
+                raise Exception(f'pickle file {filename} is not a pandas data frame!')
+            if (options.no_index):
+                print("WARNING: --no-index not compatible with pickle data frames", file=sys.stderr)
+            if (options.no_columns):
+                print("WARNING: --no-columns not compatible with pickle data frames", file=sys.stderr)
+            if (options.index_icolumn):
+                print("WARNING: --index-icolumn not compatible with pickle data frames", file=sys.stderr)
+            if (options.index_column):
+                print("WARNING: --index-column not compatible with pickle data frames", file=sys.stderr)
+            pickled = True
+        else:
+            fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
 
-        fData = numpy.array(fData, dtype=object)
+            localSeparator = options.separator
+            # Check if we can detect the data delimiter if it was not passed in manually
+            if localSeparator is None:
+                # Try to find delimiters
+                for tryDelimiter in detectDelimiter:
+                    if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
+                        localSeparator = tryDelimiter
+                        break
+                # Fallback if there is just one column and no index column
+                localSeparator = ' ' if localSeparator is None and options.no_index else localSeparator
+                if (localSeparator is None):
+                    raise Exception('Could not identify data separator, please specify it manually')
 
-        if (options.transpose):
-            fData = numpy.transpose(fData)
+            # Data delimiters clean up, remove multiple separators and separators from the end
+            reDelimiter = re.escape(localSeparator)
+            fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
+            # Tab and space delimiters, replace multiple occurences
+            if localSeparator == ' ' or localSeparator == '\t':
+                fFile = re.sub(reDelimiter + '{2,}', localSeparator, fFile)
+            # Parse the file
+            fData = [
+                [None if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
+                for x in fFile.split('\n')
+                if (len(x) > 0) and  # Ignore empty lines
+                (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
+                (options.no_index or x.count(localSeparator) > 0)  # Ignore lines which contain no data
+            ]
+            fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
+            if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
+                raise Exception(f'Could not extract any data from file {filename}')
 
-        if options.name is None:
-            if (options.no_columns or options.no_index or fData[0][0] is None or len(str(fData[0][0])) == 0):
-                options.name = os.path.basename(filename)
+            fData = numpy.array(fData, dtype=object)
+
+            if (options.transpose):
+                fData = numpy.transpose(fData)
+
+            if options.name is None:
+                if (options.no_columns or options.no_index or fData[0][0] is None or len(str(fData[0][0])) == 0):
+                    options.name = os.path.basename(filename)
             else:
                 options.name = fData[0][0]
 
-        if (options.no_columns):
-            frame = pandas.DataFrame(fData)
-        else:
-            frame = pandas.DataFrame(fData[1:])
+            if (options.no_columns):
+                frame = pandas.DataFrame(fData)
+            else:
+                frame = pandas.DataFrame(fData[1:])
 
-        # Drop only columns/rows NaN values and replace NaN with None
-        frame.dropna(how='all', axis=0, inplace=True)
-        frame = frame.where((pandas.notnull(frame)), None)
+            # Drop only columns/rows NaN values and replace NaN with None
+            frame.dropna(how='all', axis=0, inplace=True)
+            frame = frame.where((pandas.notnull(frame)), None)
 
-        if (not options.no_columns):
-            frame.columns = fData[0]
+            if (not options.no_columns):
+                frame.columns = fData[0]
 
         selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
 
@@ -501,52 +527,53 @@ for input in args.input:
                     iSplitColumn = frame.columns.tolist().index(options.split_column)
 
             for v in frame.iloc[:, iSplitColumn].unique():
-                subFrames.append(frame[frame.iloc[:, iSplitColumn] == v])
+                fileSubFrames.append(frame[frame.iloc[:, iSplitColumn] == v])
         else:
-            subFrames.append(frame)
+            fileSubFrames.append(frame)
 
-    del frame
-    for iFrame, _ in enumerate(subFrames):
-        if (not options.no_index):
-            iIndexColumn = 0
-            if (options.index_icolumn is not None):
-                if (options.index_icolumn >= subFrames[iFrame].shape[1]):
-                    raise Exception(f"Index column index {options.index_icolumn} out of bounds in {filename}!")
+        del frame
+        for iFrame, _ in enumerate(fileSubFrames):
+            if (not pickled and not options.no_index):
+                iIndexColumn = 0
+                if (options.index_icolumn is not None):
+                    if (options.index_icolumn >= fileSubFrames[iFrame].shape[1]):
+                        raise Exception(f"Index column index {options.index_icolumn} out of bounds in {filename}!")
+                    else:
+                        iIndexColumn = options.index_icolumn
+                elif (options.index_column is not None):
+                    if (options.index_column not in fileSubFrames[iFrame].columns):
+                        raise Exception(f"Index column {options.index_column} not found in {filename}!")
+                    else:
+                        iIndexColumn = fileSubFrames[iFrame].columns.tolist().index(options.index_column)
+
+                fileSubFrames[iFrame].set_index(fileSubFrames[iFrame].iloc[:, iIndexColumn], inplace=True)
+                # If the index column was explicitly selected, do not remove it
+                if iIndexColumn not in options.select_icolumns:
+                    filterColumns = numpy.array([True] * fileSubFrames[iFrame].shape[1])
+                    filterColumns[iIndexColumn] = False
+                    fileSubFrames[iFrame] = fileSubFrames[iFrame].loc[:, filterColumns]
+                    if len(options.select_icolumns) > 0:
+                        options.select_icolumns = [i - 1 if i >= iIndexColumn else i for i in options.select_icolumns]
+
+            if options.sort is not None:
+                # Density plots are sorted based on their column mean values
+                if (options.plot == 'violin' or options.plot == 'box'):
+                    fileSubFrames[iFrame] = fileSubFrames[iFrame][fileSubFrames[iFrame].mean(axis=0).sort_values(ascending=options.sort == 'asc').index]
                 else:
-                    iIndexColumn = options.index_icolumn
-            elif (options.index_column is not None):
-                if (options.index_column not in subFrames[iFrame].columns):
-                    raise Exception(f"Index column {options.index_column} not found in {filename}!")
-                else:
-                    iIndexColumn = subFrames[iFrame].columns.tolist().index(options.index_column)
+                    if (options.sort_icolumn > fileSubFrames[iFrame].shape[1]):
+                        raise Exception(f"Sort column is out of bounds in {filename}!")
+                    if (not options.no_index and options.sort_column == 0):
+                        fileSubFrames[iFrame].sort_index(ascending=options.sort == 'asc', inplace=True)
+                    else:
+                        fileSubFrames[iFrame].sort_values(by=fileSubFrames[iFrame].columns[options.sort_icolumn - 1], ascending=not options.sort == 'asc', inplace=True)
 
-            subFrames[iFrame].set_index(subFrames[iFrame].iloc[:, iIndexColumn], inplace=True)
-            # If the index column was explicitly selected, do not remove it
-            if iIndexColumn not in options.select_icolumns:
-                filterColumns = numpy.array([True] * subFrames[iFrame].shape[1])
-                filterColumns[iIndexColumn] = False
-                subFrames[iFrame] = subFrames[iFrame].loc[:, filterColumns]
-                if len(options.select_icolumns) > 0:
-                    options.select_icolumns = [i - 1 if i >= iIndexColumn else i for i in options.select_icolumns]
+            if len(options.select_icolumns) > 0:
+                filterColumns = numpy.array([True if i in options.select_icolumns else False for i in range(fileSubFrames[iFrame].shape[1])])
+                fileSubFrames[iFrame] = fileSubFrames[iFrame].loc[:, filterColumns]
 
-        if options.sort is not None:
-            # Density plots are sorted based on their column mean values
-            if (options.plot == 'violin' or options.plot == 'box'):
-                subFrames[iFrame] = subFrames[iFrame][subFrames[iFrame].mean(axis=0).sort_values(ascending=options.sort == 'asc').index]
-            else:
-                if (options.sort_icolumn > subFrames[iFrame].shape[1]):
-                    raise Exception(f"Sort column is out of bounds in {filename}!")
-                if (not options.no_index and options.sort_column == 0):
-                    subFrames[iFrame].sort_index(ascending=options.sort == 'asc', inplace=True)
-                else:
-                    subFrames[iFrame].sort_values(by=subFrames[iFrame].columns[options.sort_icolumn - 1], ascending=not options.sort == 'asc', inplace=True)
-
-        if len(options.select_icolumns) > 0:
-            filterColumns = numpy.array([True if i in options.select_icolumns else False for i in range(subFrames[iFrame].shape[1])])
-            subFrames[iFrame] = subFrames[iFrame].loc[:, filterColumns]
-
-        options.traceCount += len([x for x in subFrames[iFrame].columns if not str(x).startswith(options.special_column_start)])
-        options.frameCount += 1
+            options.traceCount += len([x for x in fileSubFrames[iFrame].columns if not str(x).startswith(options.special_column_start)])
+            options.frameCount += 1
+        subFrames.extend(fileSubFrames)
     totalTraceCount += options.traceCount
     totalFrameCount += options.frameCount
     inputCount += 1

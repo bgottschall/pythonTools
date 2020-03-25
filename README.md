@@ -21,11 +21,12 @@ Script will search for these executables by default:
 * /opt/plotly-orca/orca
 * /opt/plotly/orca
 * orca
+
 An executable defined with the environment variable `PLOTLY_ORCA` takes
 precedence. You can also define the orca binary as an argument to plot.py.
 
-** Plotly requires a special orca version which is incompatible with the
-original orca! **
+**Plotly requires a special orca version which is incompatible with the
+original orca!**
 
 ### Examples
 

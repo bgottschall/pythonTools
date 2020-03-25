@@ -4,7 +4,7 @@ Uses plotly to visualize CSV files. A lot of features are supported like reading
 
 This script acts as a master script generating a plotting script. In case this script doesn't cover something that is required for a graph, it can output the final plotting script to make manual adjustments like adding annotations.
 
-### Requirements
+## Requirements
 
 PIP3 packages:
 * plotly
@@ -16,18 +16,18 @@ PIP3 packages:
 pip3 install plotly numpy pandas colour
 ```
 
-Download the latest plotly-orca at https://github.com/plotly/orca/releases 
-Script will search for these executables by default:
+Download the latest plotly-orca at https://github.com/plotly/orca/releases. Script will search for these executables by default:
 * /opt/plotly-orca/orca
 * /opt/plotly/orca
 * orca
+
 An executable defined with the environment variable `PLOTLY_ORCA` takes
 precedence. You can also define the orca binary as an argument to plot.py.
 
-** Plotly requires a special orca version which is incompatible with the
-original orca! **
+**Plotly requires a special orca version which is incompatible with the
+original orca!**
 
-### Examples
+## Examples
 
 #### Line Chart
 ```

@@ -428,6 +428,8 @@ for input in args.input:
                 print("WARNING: --no-index not compatible with pickle data frames", file=sys.stderr)
             if (options.no_columns):
                 print("WARNING: --no-columns not compatible with pickle data frames", file=sys.stderr)
+            if (options.transpose):
+                frame = frame.transpose()
             pickled = True
         else:
             fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')

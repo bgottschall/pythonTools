@@ -429,10 +429,6 @@ for input in args.input:
                 print("WARNING: --no-index not compatible with pickle data frames", file=sys.stderr)
             if (options.no_columns):
                 print("WARNING: --no-columns not compatible with pickle data frames", file=sys.stderr)
-            if (options.index_icolumn):
-                print("WARNING: --index-icolumn not compatible with pickle data frames", file=sys.stderr)
-            if (options.index_column):
-                print("WARNING: --index-column not compatible with pickle data frames", file=sys.stderr)
             pickled = True
         else:
             fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
@@ -533,7 +529,7 @@ for input in args.input:
 
         del frame
         for iFrame, _ in enumerate(fileSubFrames):
-            if (not pickled and not options.no_index):
+            if (not options.no_index and (not pickled or options.index_icolumn is not None or options.index_column is not None)):
                 iIndexColumn = 0
                 if (options.index_icolumn is not None):
                     if (options.index_icolumn >= fileSubFrames[iFrame].shape[1]):

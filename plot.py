@@ -169,7 +169,7 @@ detectDelimiter = ['\t', ';', ' ', ',']
 parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
 parser.add_argument("--sort-files", help="sort input files", choices=['asc', 'desc'])
-parser.add_argument("-c", "--colour", help="define colours", default=[], action='append', type=colour.Color)
+parser.add_argument("-c", "--colours", help="define colours", default=[], nargs='+', type=colour.Color)
 parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#084A91"), type=colour.Color)
 parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#97B5CA"), type=colour.Color)
 parser.add_argument("--per-trace-colours", help="one colours for each trace (default)", action='store_true')

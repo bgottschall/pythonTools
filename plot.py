@@ -524,7 +524,7 @@ for input in args.input:
         else:
             sortKey = None
             if options.sort_columns_by == 'row':
-                if options.sort_columns_irow is None and options.sort_column_row is None:
+                if options.sort_columns_irow is None and options.sort_columns_row is None:
                     options.sort_columns_irow = 0
                 elif options.sort_columns_irow is None:
                     if (options.index_icolumn is not None):
@@ -536,10 +536,10 @@ for input in args.input:
                     options.sort_columns_irow = lIndex.index(options.sort_columns_row)
                 if (options.sort_columns_irow >= masterFrame.shape[0]):
                     raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
-                sortKey = masterFrame.iloc[options.sort_columns_irow]
+                sortKey = masterFrame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
             else:
-                sortKey = getattr(masterFrame, options.sort_columns_by)(axis=0)
-            masterFrame = masterFrame[pandas.to_numeric(sortKey, errors='coerce').sort_values(ascending=options.sort_columns == 'asc').index]
+                sortKey = getattr(masterFrame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
+            masterFrame = masterFrame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
             if (options.index_icolumn is not None):
                 options.index_icolumn = masterFrame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
 
@@ -555,14 +555,13 @@ for input in args.input:
                     options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
                 if (options.sort_rows_icolumn >= masterFrame.shape[1]):
                     raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
-                sortKey = masterFrame.iloc[:, options.sort_rows_icolumn]
-
+                sortKey = masterFrame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
             else:
                 filterColumns = numpy.array([True] * masterFrame.shape[1])
                 if options.index_icolumn is not False:
                     filterColumns[options.index_icolumn] = False
-                sortKey = getattr(masterFrame.loc[:, filterColumns], options.sort_rows_by)(axis=1)
-            masterFrame = masterFrame.reindex(pandas.to_numeric(sortKey, errors='coerce').sort_values(ascending=options.sort_rows == 'asc').index)
+                sortKey = getattr(masterFrame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
+            masterFrame = masterFrame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
 
     if len(options.ignore_icolumns) > 0:
         options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < masterFrame.shape[1]]

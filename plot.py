@@ -192,13 +192,13 @@ parser.add_argument("--select-columns", help="select these column names", type=s
 parser.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-columns", help="ignore these column names", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-columns", help="sort column (default %(default)s)", default='none', choices=['none', 'asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-columns-method", help="sort column after method or row (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'row'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-columns-irow", help="sort column after this row index (requires method 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-columns-row", help="sort column after this row (requires method 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-columns-by", help="sort column after method or row (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'row'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-columns-irow", help="sort column after this row index (requires sorting by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-columns-row", help="sort column after this row (requires sorting by 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-rows", help="sort rows (default %(default)s)", default='none', choices=['none', 'asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-rows-method", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sort method 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--sort-rows-column", help="sort rows after this column (requires sort method 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-rows-by", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sorting by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--dataframe", help="pickle pandas dataframe to file", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--print", help="print plotting information and data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
@@ -523,7 +523,7 @@ for input in args.input:
                 print("WARNING: --select-columns and --select-icolumns column order overrides --sort-columns!")
         else:
             sortKey = None
-            if options.sort_columns_method == 'row':
+            if options.sort_columns_by == 'row':
                 if options.sort_columns_irow is None and options.sort_column_row is None:
                     options.sort_columns_irow = 0
                 elif options.sort_columns_irow is None:
@@ -538,14 +538,14 @@ for input in args.input:
                     raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
                 sortKey = masterFrame.iloc[options.sort_columns_irow]
             else:
-                sortKey = getattr(masterFrame, options.sort_columns_method)(axis=0)
+                sortKey = getattr(masterFrame, options.sort_columns_by)(axis=0)
             masterFrame = masterFrame[pandas.to_numeric(sortKey, errors='coerce').sort_values(ascending=options.sort_columns == 'asc').index]
             if (options.index_icolumn is not None):
                 options.index_icolumn = masterFrame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
-   
+
     if options.sort_rows != 'none':
             sortKey = None
-            if options.sort_rows_method == 'column':
+            if options.sort_rows_by == 'column':
                 if options.sort_rows_icolumn is None and options.sort_rows_column is None:
                     options.sort_rows_icolumn = 0
                 elif options.sort_rows_icolumn is None:
@@ -561,7 +561,7 @@ for input in args.input:
                 filterColumns = numpy.array([True] * masterFrame.shape[1])
                 if options.index_icolumn is not False:
                     filterColumns[options.index_icolumn] = False
-                sortKey = getattr(masterFrame.loc[:, filterColumns], options.sort_rows_method)(axis=1)
+                sortKey = getattr(masterFrame.loc[:, filterColumns], options.sort_rows_by)(axis=1)
             masterFrame = masterFrame.reindex(pandas.to_numeric(sortKey, errors='coerce').sort_values(ascending=options.sort_rows == 'asc').index)
 
     if len(options.ignore_icolumns) > 0:
@@ -597,7 +597,6 @@ for input in args.input:
     if (len(options.select_icolumns) == 0) and selectColumns:
         raise Exception(f"No selected columns found or all are ignored in files {', '.join(input['value'])}!")
 
-
     if (options.split_icolumn is not None) or (options.split_column is not None):
         iSplitColumn = None
         if (options.split_icolumn is not None):
@@ -610,8 +609,6 @@ for input in args.input:
                 raise Exception(f"Split column {options.split_column} not found in files {', '.join(input['value'])}!")
             else:
                 iSplitColumn = masterFrame.columns.tolist().index(options.split_column)
-
-
         masterFrames = []
         for v in masterFrame.iloc[:, iSplitColumn].unique():
             masterFrames.append(masterFrame[masterFrame.iloc[:, iSplitColumn] == v])
@@ -631,7 +628,6 @@ for input in args.input:
                 elif len(options.ignore_icolumns) > 0:
                     options.ignore_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.ignore_icolumns]
 
-    
         if len(options.select_icolumns) > 0:
             newMasterFrame = None
             for i in options.select_icolumns:
@@ -642,7 +638,6 @@ for input in args.input:
             filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(masterFrame.shape[1])])
             masterFrame = masterFrame.loc[:, filterColumns]
 
-
         options.traceCount = len([x for x in masterFrame.columns if not str(x).startswith(options.special_column_start)])
         totalTraceCount += options.traceCount
         totalInputCount += 1
@@ -651,8 +646,12 @@ for input in args.input:
         masterFrames[_index] = masterFrame
         if (options.print):
             doneSomething = True
-            print(f"Col: {options.col}  Row: {options.row}  Colspan:  {options.colspan}  Rowspan: {options.rowspan}  Files: {', '.join(input['value'])}")
+            pFiles = f"Files: {', '.join(input['value'])}"
+            pGrid = f"Plot: {options.plot}  Grid: [ {options.row}{' - ' + str(options.row + options.rowspan - 1) if options.rowspan > 1 else ''} , {options.col}{' - ' + str(options.col + options.colspan - 1) if options.colspan > 1 else ''} ]"
+            pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
+            print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
             print(masterFrame)
+            print(pSep)
         data.append({'options': options, 'frame': masterFrames[_index]})
 
     updateRange(subplotGrid, [options.col + (options.colspan - 1), options.row + (options.rowspan - 1)])

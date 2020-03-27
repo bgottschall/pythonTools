@@ -34,6 +34,7 @@ import statistics
 import bz2
 import sys
 import pickle
+import copy
 
 
 def isFloat(val):
@@ -180,6 +181,7 @@ inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input f
 parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -410,6 +412,7 @@ for input in args.input:
     options.traceCount = 0
     options.frameCount = 0
     masterFrame = None
+    masterFrames = []
     for filename in input['value']:
         if (not os.path.isfile(filename)):
             raise Exception(f'Could not find input file {filename}!')
@@ -419,7 +422,6 @@ for input in args.input:
         else:
             rawFile = open(filename, mode='rb')
 
-        pickled=True
         try:
             frame = pickle.load(rawFile)
         except Exception:
@@ -427,23 +429,26 @@ for input in args.input:
             rawFile.seek(0)
 
         if frame is not None:
-            nFrame = None
             if (isinstance(frame, list)):
                 for f in frame:
                     if (not isinstance(f, pandas.DataFrame)):
                         raise Exception(f'pickle file {filename} is not a list of pandas dataframes!')
-                    nFrame = f if nFrame is None else pandas.concat([nFrame, f], axis=0, join='outer', verify_integrity=False, copy=False)
-                frame = nFrame
+                    masterFrames.append(f)
             elif (not isinstance(frame, pandas.DataFrame)):
                 raise Exception(f'pickle file {filename} is not a pandas data frame!')
+            else:
+                masterFrames.append(frame)
 
             if not args.quiet and options.no_columns:
                 print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
-            if (options.transpose):
-                frame = frame.transpose()
-            # Restore an set index as first column:
-            if (not isinstance(frame.index, pandas.RangeIndex)):
-                frame.reset_index(inplace=True)
+
+            for _index, frame in enumerate(masterFrames):
+                if (options.transpose):
+                    frame = frame.transpose()
+                    # Restore an set index as first column:
+                if (not isinstance(frame.index, pandas.RangeIndex)):
+                    frame.reset_index(inplace=True)
+                masterFrames[_index] = frame
         else:
             fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
 
@@ -494,126 +499,136 @@ for input in args.input:
 
             if (not options.no_columns):
                 frame.columns = fData[0]
+            masterFrames.append(frame)
 
-        if (masterFrame is None):
-            masterFrame = frame
-        else:
-            masterFrame = pandas.concat([masterFrame, frame], axis=0, join='outer', verify_integrity=False, copy=False)
+    if options.join != 'none':
+        joinedFrame = None
+        for f in masterFrames:
+            joinedFrame = f if joinedFrame is None else pandas.concat([joinedFrame, f], axis=0 if options.join == 'index' else 1, join='outer', verify_integrity=False, copy=True)
+        masterFrames = [joinedFrame]
 
+    newMasterFrames = []
+    for _index, masterFrame in enumerate(masterFrames):
+        masterFrame = masterFrame.where((pandas.notnull(masterFrame)), None)
 
-    if (not options.no_index):
-        iIndexColumn = 0
-        if (options.index_icolumn is not None):
-            if (options.index_icolumn >= masterFrame.shape[1]):
-                raise Exception(f"Index column index {options.index_icolumn} out of bounds in {', '.join(input['value'])}!")
-            else:
-                iIndexColumn = options.index_icolumn
-        elif (options.index_column is not None):
-            if (options.index_column not in masterFrame.columns):
-                raise Exception(f"Index column {options.index_column} not found in {', '.join(input['value'])}!")
-            else:
-                iIndexColumn = masterFrame.columns.tolist().index(options.index_column)
-        options.index_icolumn = iIndexColumn
-    else:
-        options.index_icolumn = None
-
-    if options.sort_columns != 'none':
-        if len(options.select_icolumns) > 0:
-            if not args.quiet:
-                print("WARNING: --select-columns and --select-icolumns column order overrides --sort-columns!")
-        else:
-            sortKey = None
-            if options.sort_columns_by == 'row':
-                if options.sort_columns_irow is None and options.sort_columns_row is None:
-                    options.sort_columns_irow = 0
-                elif options.sort_columns_irow is None:
-                    if (options.index_icolumn is not None):
-                        lIndex = masterFrame.iloc[:, options.index_icolumn].tolist()
-                    else:
-                        lIndex = masterFrame.index.tolist()
-                    if (options.sort_columns_row not in lIndex):
-                        raise Exception(f"Sort row {options.sort_columns_row} not found in files {', '.join(input['value'])}")
-                    options.sort_columns_irow = lIndex.index(options.sort_columns_row)
-                if (options.sort_columns_irow >= masterFrame.shape[0]):
-                    raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
-                sortKey = masterFrame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
-            else:
-                sortKey = getattr(masterFrame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
-            masterFrame = masterFrame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
+        if (not options.no_index):
+            iIndexColumn = 0
             if (options.index_icolumn is not None):
-                options.index_icolumn = masterFrame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
+                if (options.index_icolumn >= masterFrame.shape[1]):
+                    raise Exception(f"Index column index {options.index_icolumn} out of bounds in {', '.join(input['value'])}!")
+                else:
+                    iIndexColumn = options.index_icolumn
+            elif (options.index_column is not None):
+                if (options.index_column not in masterFrame.columns):
+                    raise Exception(f"Index column {options.index_column} not found in {', '.join(input['value'])}!")
+                else:
+                    iIndexColumn = masterFrame.columns.tolist().index(options.index_column)
+            options.index_icolumn = iIndexColumn
+        else:
+            options.index_icolumn = None
 
-    if options.sort_rows != 'none':
-            sortKey = None
-            if options.sort_rows_by == 'column':
-                if options.sort_rows_icolumn is None and options.sort_rows_column is None:
-                    options.sort_rows_icolumn = 0
-                elif options.sort_rows_icolumn is None:
-                    lColumns = masterFrame.columns.tolist()
-                    if (options.sort_rows_column not in lColumns):
-                        raise Exception(f"Sort column {options.sort_rows_column} not found in files {', '.join(input['value'])}")
-                    options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
-                if (options.sort_rows_icolumn >= masterFrame.shape[1]):
-                    raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
-                sortKey = masterFrame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
+        if options.sort_columns != 'none':
+            if len(options.select_icolumns) > 0:
+                if not args.quiet:
+                    print("WARNING: --select-columns and --select-icolumns column order overrides --sort-columns!")
             else:
-                filterColumns = numpy.array([True] * masterFrame.shape[1])
-                if options.index_icolumn is not False:
-                    filterColumns[options.index_icolumn] = False
-                sortKey = getattr(masterFrame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
-            masterFrame = masterFrame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
+                sortKey = None
+                if options.sort_columns_by == 'row':
+                    if options.sort_columns_irow is None and options.sort_columns_row is None:
+                        options.sort_columns_irow = 0
+                    elif options.sort_columns_irow is None:
+                        if (options.index_icolumn is not None):
+                            lIndex = masterFrame.iloc[:, options.index_icolumn].tolist()
+                        else:
+                            lIndex = masterFrame.index.tolist()
+                        if (options.sort_columns_row not in lIndex):
+                            raise Exception(f"Sort row {options.sort_columns_row} not found in files {', '.join(input['value'])}")
+                        options.sort_columns_irow = lIndex.index(options.sort_columns_row)
+                    if (options.sort_columns_irow >= masterFrame.shape[0]):
+                        raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
+                    sortKey = masterFrame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
+                else:
+                    sortKey = getattr(masterFrame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
+                masterFrame = masterFrame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
+                if (options.index_icolumn is not None):
+                    options.index_icolumn = masterFrame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
 
-    if len(options.ignore_icolumns) > 0:
-        options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < masterFrame.shape[1]]
+        if options.sort_rows != 'none':
+                sortKey = None
+                if options.sort_rows_by == 'column':
+                    if options.sort_rows_icolumn is None and options.sort_rows_column is None:
+                        options.sort_rows_icolumn = 0
+                    elif options.sort_rows_icolumn is None:
+                        lColumns = masterFrame.columns.tolist()
+                        if (options.sort_rows_column not in lColumns):
+                            raise Exception(f"Sort column {options.sort_rows_column} not found in files {', '.join(input['value'])}")
+                        options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
+                    if (options.sort_rows_icolumn >= masterFrame.shape[1]):
+                        raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
+                    sortKey = masterFrame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
+                else:
+                    filterColumns = numpy.array([True] * masterFrame.shape[1])
+                    if options.index_icolumn is not False:
+                        filterColumns[options.index_icolumn] = False
+                    sortKey = getattr(masterFrame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
+                masterFrame = masterFrame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
 
-    if len(options.ignore_columns) > 0:
-        for i, c in enumerate(masterFrame.columns):
-            if c in options.ignore_columns:
-                options.ignore_icolumns.append(i)
-        options.ignore_icolumns = list(set(options.ignore_icolumns))
+        if len(options.ignore_icolumns) > 0:
+            options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < masterFrame.shape[1]]
 
-    selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
+        if len(options.ignore_columns) > 0:
+            for i, c in enumerate(masterFrame.columns):
+                if c in options.ignore_columns:
+                    options.ignore_icolumns.append(i)
+            options.ignore_icolumns = list(set(options.ignore_icolumns))
 
-    if len(options.select_icolumns) > 0:
-        selectCount = len(options.select_icolumns)
-        options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < masterFrame.shape[1]]
-        if not args.quiet and (selectCount != len(options.select_icolumns)):
-            print(f"WARNING: some selected column indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
+        selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
 
-    if len(options.select_columns) > 0:
-        selectedColumns = []
-        for sc in options.select_columns:
-            for i, c in enumerate(frame.columns):
-                if (sc == c):
-                    options.select_icolumns.append(i)
-                    selectedColumns.append(c)
-        if not args.quiet and len(options.select_columns) != len(selectedColumns):
-            print(f"WARNING: some selected columns where not found in files {', '.join(input['value'])}", file=sys.stderr)
+        if len(options.select_icolumns) > 0:
+            selectCount = len(options.select_icolumns)
+            options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < masterFrame.shape[1]]
+            if not args.quiet and (selectCount != len(options.select_icolumns)):
+                print(f"WARNING: some selected column indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
 
-    if len(options.select_icolumns) > 0 and len(options.ignore_icolumns) > 0:
-        options.select_icolumns = [i for i in options.select_icolumns if i not in options.ignore_icolumns]
+        if len(options.select_columns) > 0:
+            selectedColumns = []
+            for sc in options.select_columns:
+                for i, c in enumerate(frame.columns):
+                    if (sc == c):
+                        options.select_icolumns.append(i)
+                        selectedColumns.append(c)
+            if not args.quiet and len(options.select_columns) != len(selectedColumns):
+                print(f"WARNING: some selected columns where not found in files {', '.join(input['value'])}", file=sys.stderr)
 
-    if (len(options.select_icolumns) == 0) and selectColumns:
-        raise Exception(f"No selected columns found or all are ignored in files {', '.join(input['value'])}!")
+        if len(options.select_icolumns) > 0 and len(options.ignore_icolumns) > 0:
+            options.select_icolumns = [i for i in options.select_icolumns if i not in options.ignore_icolumns]
 
-    if (options.split_icolumn is not None) or (options.split_column is not None):
-        iSplitColumn = None
-        if (options.split_icolumn is not None):
-            if (options.split_icolumn >= masterFrame.shape[1]):
-                raise Exception(f"Split column index {options.split_icolumn} out of bounds in files {', '.join(input['value'])}!")
-            else:
-                iSplitColumn = options.split_icolumn
-        elif (options.split_column is not None):
-            if (options.split_column not in masterFrame.columns):
-                raise Exception(f"Split column {options.split_column} not found in files {', '.join(input['value'])}!")
-            else:
-                iSplitColumn = masterFrame.columns.tolist().index(options.split_column)
-        masterFrames = []
-        for v in masterFrame.iloc[:, iSplitColumn].unique():
-            masterFrames.append(masterFrame[masterFrame.iloc[:, iSplitColumn] == v])
-    else:
-        masterFrames = [masterFrame]
+        if (len(options.select_icolumns) == 0) and selectColumns:
+            raise Exception(f"No selected columns found or all are ignored in files {', '.join(input['value'])}!")
 
+        if (options.split_icolumn is not None) or (options.split_column is not None):
+            iSplitColumn = None
+            if (options.split_icolumn is not None):
+                if (options.split_icolumn >= masterFrame.shape[1]):
+                    raise Exception(f"Split column index {options.split_icolumn} out of bounds in files {', '.join(input['value'])}!")
+                else:
+                    iSplitColumn = options.split_icolumn
+            elif (options.split_column is not None):
+                if (options.split_column not in masterFrame.columns):
+                    raise Exception(f"Split column {options.split_column} not found in files {', '.join(input['value'])}!")
+                else:
+                    iSplitColumn = masterFrame.columns.tolist().index(options.split_column)
+            for v in masterFrame.iloc[:, iSplitColumn].unique():
+                newMasterFrames.append(masterFrame[masterFrame.iloc[:, iSplitColumn] == v])
+        else:
+            masterFrames[_index] = masterFrame
+            newMasterFrames.append(masterFrames[_index])
+
+    masterFrames = newMasterFrames
+
+    options.inputIndex = totalInputCount
+    options.traceCount = 0
+    options.traceOffset = 0
     for _index, masterFrame in enumerate(masterFrames):
         if (options.index_icolumn is not None):
             masterFrame.set_index(masterFrame.iloc[:, options.index_icolumn], inplace=True)
@@ -639,9 +654,7 @@ for input in args.input:
 
         options.traceCount = len([x for x in masterFrame.columns if not str(x).startswith(options.special_column_start)])
         totalTraceCount += options.traceCount
-        totalInputCount += 1
 
-        # TODO: Use deep copy if we plan to alter options later
         masterFrames[_index] = masterFrame
         if (options.print):
             doneSomething = True
@@ -651,7 +664,9 @@ for input in args.input:
             print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
             print(masterFrame)
             print(pSep)
-        data.append({'options': options, 'frame': masterFrames[_index]})
+        data.append({'options': copy.deepcopy(options), 'frame': masterFrames[_index]})
+        options.traceOffset += options.traceCount
+    totalInputCount += 1
 
     updateRange(subplotGrid, [options.col + (options.colspan - 1), options.row + (options.rowspan - 1)])
     if (options.row not in subplotGridDefinition):
@@ -805,18 +820,17 @@ plotScript.write("""
     ],
 )""")
 
+currentInputIndex = None
 traceIndex = 0
-inputIndex = 0
+inputTraceIndex = 0
 for input in data:
     options = input['options']
     frame = input['frame']
     plotRange = []
-    traceIndex = 0
-    inputTraceIndex = 0
-    # if (options.row + options.rowspan - 1 == subplotGrid[1]['max'] and (options.y_title is not None)):
-    #     defaultBottomMargin = True
-    # if (options.col == 1 and (options.x_title is not None or not options.x_hide)):
-    #     defaultLeftMargin = True
+    if (options.inputIndex != currentInputIndex):
+        currentInputIndex = options.inputIndex
+        inputTraceIndex = 0
+
     for colIndex, _ in enumerate(frame.columns):
         fillcolour = colours[colourIndex % len(colours)]
         markercolour = colour.Color(options.line_colour)
@@ -1009,7 +1023,6 @@ fig.add_trace(go.Violin(
         traceIndex += 1
         inputTraceIndex += 1
         colourIndex += 1 if args.per_trace_colours else 0
-    inputIndex += 1
     colourIndex += 1 if args.per_input_colours else 0
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")

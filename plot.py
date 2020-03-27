@@ -921,7 +921,7 @@ fig.add_trace(go.Bar(
             else:
                 plotScript.write(f"""
     marker_color='{fillcolour.hex}',""")
-                plotScript.write(f"""
+            plotScript.write(f"""
     marker_line_color='{markercolour.hex}',
     marker_line_width={options.line_width},
     y={ydata},
@@ -991,7 +991,7 @@ fig.add_trace(go.Violin(
     name='{traceName}',
     legendgroup='{traceName}',
     showlegend=True,
-    scalegroup='trace{inputIndex}',
+    scalegroup='trace{inputTraceIndex}',
     y={ydata},
     x={xdata},
     fillcolor='{fillcolour.hex}',

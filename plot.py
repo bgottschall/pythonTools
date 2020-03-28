@@ -174,6 +174,7 @@ parser.add_argument("-c", "--colours", help="define colours", default=[], nargs=
 parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#084A91"), type=colour.Color)
 parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#97B5CA"), type=colour.Color)
 parser.add_argument("--per-trace-colours", help="one colours for each trace (default)", action='store_true', default=False)
+parser.add_argument("--per-frame-colours", help="one colour to each dataframe", action='store_true', default=False)
 parser.add_argument("--per-input-colours", help="one colour to each input file", action='store_true', default=False)
 
 inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
@@ -181,7 +182,7 @@ inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input f
 parser.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -298,8 +299,11 @@ parser.add_argument("-q", "--quiet", action="store_true", help="do not automatic
 
 args = parser.parse_args()
 
-args.per_trace_colours = True if (not args.per_trace_colours and not args.per_input_colours) else args.per_trace_colours
-args.per_input_colours = False if (args.per_trace_colours) else args.per_input_colours
+if (not args.per_trace_colours and not args.per_frame_colours and not args.per_input_colours) or (args.per_trace_colours):
+    args.per_trace_colours = True
+    args.per_frame_colours, args.per_input_colours = False, False
+elif (args.per_frame_colours):
+    args.per_input_colours = False
 
 for input in args.input:
     options = input['children']
@@ -396,6 +400,7 @@ if args.legend is not None:
             args.legend_x = -0.05
 
 totalTraceCount = 0
+totalFrameCount = 0
 totalInputCount = 0
 subplotGrid = [{'min': 1, 'max': 1}, {'min': 1, 'max': 1}]
 subplotGridDefinition = {}
@@ -408,9 +413,9 @@ defaultPadMargin = False
 doneSomething = False
 
 for input in args.input:
-    options = input['children']
-    options.traceCount = 0
-    options.frameCount = 0
+    inputOptions = input['children']
+    inputOptions.traceCount = 0
+    inputOptions.frameCount = 0
     masterFrame = None
     masterFrames = []
     for filename in input['value']:
@@ -433,26 +438,27 @@ for input in args.input:
                 for f in frame:
                     if (not isinstance(f, pandas.DataFrame)):
                         raise Exception(f'pickle file {filename} is not a list of pandas dataframes!')
-                    masterFrames.append(f)
+                    masterFrames.append((copy.deepcopy(inputOptions), f))
             elif (not isinstance(frame, pandas.DataFrame)):
                 raise Exception(f'pickle file {filename} is not a pandas data frame!')
             else:
-                masterFrames.append(frame)
+                masterFrames.append((copy.deepcopy(inputOptions), frame))
 
-            if not args.quiet and options.no_columns:
+            if not args.quiet and inputOptions.no_columns:
                 print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
 
-            for _index, frame in enumerate(masterFrames):
+            for _index, (options, frame) in enumerate(masterFrames):
                 if (options.transpose):
                     frame = frame.transpose()
                     # Restore an set index as first column:
                 if (not isinstance(frame.index, pandas.RangeIndex)):
                     frame.reset_index(inplace=True)
-                masterFrames[_index] = frame
+
+                masterFrames[_index] = (options, frame)
         else:
             fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
 
-            localSeparator = options.separator
+            localSeparator = inputOptions.separator
             # Check if we can detect the data delimiter if it was not passed in manually
             if localSeparator is None:
                 # Try to find delimiters
@@ -493,40 +499,52 @@ for input in args.input:
             else:
                 frame = pandas.DataFrame(fData[1:])
 
-            # Drop only columns/rows NaN values and replace NaN with None
-            frame.dropna(how='all', axis=0, inplace=True)
-            frame = frame.where((pandas.notnull(frame)), None)
-
             if (not options.no_columns):
                 frame.columns = fData[0]
-            masterFrames.append(frame)
 
-    if options.join != 'none':
-        joinedFrame = None
-        for f in masterFrames:
-            joinedFrame = f if joinedFrame is None else pandas.concat([joinedFrame, f], axis=0 if options.join == 'index' else 1, join='outer', verify_integrity=False, copy=True)
-        masterFrames = [joinedFrame]
+            masterFrames.append((copy.deepcopy(inputOptions), frame))
 
-    newMasterFrames = []
-    for _index, masterFrame in enumerate(masterFrames):
-        masterFrame = masterFrame.where((pandas.notnull(masterFrame)), None)
+    for _index, (options, frame) in enumerate(masterFrames):
+        # Drop only columns/rows NaN values and replace NaN with None
+        frame.dropna(how='all', axis=0, inplace=True)
+        frame = frame.where((pandas.notnull(frame)), None)
 
         if (not options.no_index):
             iIndexColumn = 0
             if (options.index_icolumn is not None):
-                if (options.index_icolumn >= masterFrame.shape[1]):
+                if (options.index_icolumn >= frame.shape[1]):
                     raise Exception(f"Index column index {options.index_icolumn} out of bounds in {', '.join(input['value'])}!")
                 else:
                     iIndexColumn = options.index_icolumn
             elif (options.index_column is not None):
-                if (options.index_column not in masterFrame.columns):
+                if (options.index_column not in frame.columns):
                     raise Exception(f"Index column {options.index_column} not found in {', '.join(input['value'])}!")
                 else:
-                    iIndexColumn = masterFrame.columns.tolist().index(options.index_column)
+                    iIndexColumn = frame.columns.tolist().index(options.index_column)
             options.index_icolumn = iIndexColumn
         else:
             options.index_icolumn = None
 
+        masterFrames[_index] = (options, frame)
+
+    if options.join != 'none':
+        joinedFrame = None
+        revisedOptions = copy.deepcopy(inputOptions)
+        for options, frame in masterFrames:
+            if (inputOptions.join == 'index' and not inputOptions.no_index):
+                frame.set_index(frame.columns[options.index_icolumn], inplace=True)
+            elif not inputOptions.no_index and joinedFrame is None:
+                revisedOptions.index_icolumn = options.index_icolumn
+            joinedFrame = frame if joinedFrame is None else pandas.concat([joinedFrame, frame], axis=1 if inputOptions.join == 'index' else 0, join='outer', verify_integrity=False, copy=True)
+
+        if (inputOptions.join == 'index' and not inputOptions.no_index):
+            joinedFrame.reset_index(inplace=True)
+            revisedOptions.index_icolumn = 0
+
+        masterFrames = [(revisedOptions, joinedFrame)]
+
+    newMasterFrames = []
+    for _index, (options, frame) in enumerate(masterFrames):
         if options.sort_columns != 'none':
             if len(options.select_icolumns) > 0:
                 if not args.quiet:
@@ -538,20 +556,20 @@ for input in args.input:
                         options.sort_columns_irow = 0
                     elif options.sort_columns_irow is None:
                         if (options.index_icolumn is not None):
-                            lIndex = masterFrame.iloc[:, options.index_icolumn].tolist()
+                            lIndex = frame.iloc[:, options.index_icolumn].tolist()
                         else:
-                            lIndex = masterFrame.index.tolist()
+                            lIndex = frame.index.tolist()
                         if (options.sort_columns_row not in lIndex):
                             raise Exception(f"Sort row {options.sort_columns_row} not found in files {', '.join(input['value'])}")
                         options.sort_columns_irow = lIndex.index(options.sort_columns_row)
-                    if (options.sort_columns_irow >= masterFrame.shape[0]):
+                    if (options.sort_columns_irow >= frame.shape[0]):
                         raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
-                    sortKey = masterFrame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
+                    sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
                 else:
-                    sortKey = getattr(masterFrame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
-                masterFrame = masterFrame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
+                    sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
+                frame = frame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
                 if (options.index_icolumn is not None):
-                    options.index_icolumn = masterFrame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
+                    options.index_icolumn = frame.columns.tolist().index(sortKey.index.tolist()[options.index_icolumn])
 
         if options.sort_rows != 'none':
                 sortKey = None
@@ -559,25 +577,25 @@ for input in args.input:
                     if options.sort_rows_icolumn is None and options.sort_rows_column is None:
                         options.sort_rows_icolumn = 0
                     elif options.sort_rows_icolumn is None:
-                        lColumns = masterFrame.columns.tolist()
+                        lColumns = frame.columns.tolist()
                         if (options.sort_rows_column not in lColumns):
                             raise Exception(f"Sort column {options.sort_rows_column} not found in files {', '.join(input['value'])}")
                         options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
-                    if (options.sort_rows_icolumn >= masterFrame.shape[1]):
+                    if (options.sort_rows_icolumn >= frame.shape[1]):
                         raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
-                    sortKey = masterFrame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
+                    sortKey = frame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
                 else:
-                    filterColumns = numpy.array([True] * masterFrame.shape[1])
+                    filterColumns = numpy.array([True] * frame.shape[1])
                     if options.index_icolumn is not False:
                         filterColumns[options.index_icolumn] = False
-                    sortKey = getattr(masterFrame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
-                masterFrame = masterFrame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
+                    sortKey = getattr(frame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
+                frame = frame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
 
         if len(options.ignore_icolumns) > 0:
-            options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < masterFrame.shape[1]]
+            options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < frame.shape[1]]
 
         if len(options.ignore_columns) > 0:
-            for i, c in enumerate(masterFrame.columns):
+            for i, c in enumerate(frame.columns):
                 if c in options.ignore_columns:
                     options.ignore_icolumns.append(i)
             options.ignore_icolumns = list(set(options.ignore_icolumns))
@@ -586,7 +604,7 @@ for input in args.input:
 
         if len(options.select_icolumns) > 0:
             selectCount = len(options.select_icolumns)
-            options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < masterFrame.shape[1]]
+            options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < frame.shape[1]]
             if not args.quiet and (selectCount != len(options.select_icolumns)):
                 print(f"WARNING: some selected column indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
 
@@ -609,84 +627,87 @@ for input in args.input:
         if (options.split_icolumn is not None) or (options.split_column is not None):
             iSplitColumn = None
             if (options.split_icolumn is not None):
-                if (options.split_icolumn >= masterFrame.shape[1]):
+                if (options.split_icolumn >= frame.shape[1]):
                     raise Exception(f"Split column index {options.split_icolumn} out of bounds in files {', '.join(input['value'])}!")
                 else:
                     iSplitColumn = options.split_icolumn
             elif (options.split_column is not None):
-                if (options.split_column not in masterFrame.columns):
+                if (options.split_column not in frame.columns):
                     raise Exception(f"Split column {options.split_column} not found in files {', '.join(input['value'])}!")
                 else:
-                    iSplitColumn = masterFrame.columns.tolist().index(options.split_column)
-            for v in masterFrame.iloc[:, iSplitColumn].unique():
-                newMasterFrames.append(masterFrame[masterFrame.iloc[:, iSplitColumn] == v])
+                    iSplitColumn = frame.columns.tolist().index(options.split_column)
+            for v in frame.iloc[:, iSplitColumn].unique():
+                newFrame = frame[frame.iloc[:, iSplitColumn] == v].reset_index(drop=True)
+                newMasterFrames.append((options, newFrame))
         else:
-            masterFrames[_index] = masterFrame
+            masterFrames[_index] = (options, frame)
             newMasterFrames.append(masterFrames[_index])
 
     masterFrames = newMasterFrames
 
-    options.inputIndex = totalInputCount
-    options.traceCount = 0
-    options.traceOffset = 0
-    for _index, masterFrame in enumerate(masterFrames):
+    inputOptions.traceCount = 0
+    for _index, (options, frame) in enumerate(masterFrames):
         if (options.index_icolumn is not None):
-            masterFrame.set_index(masterFrame.iloc[:, options.index_icolumn], inplace=True)
+            frame.set_index(frame.iloc[:, options.index_icolumn], inplace=True)
             # If the index column was explicitly selected, do not remove it
             if options.index_icolumn not in options.select_icolumns:
-                filterColumns = numpy.array([True] * masterFrame.shape[1])
+                filterColumns = numpy.array([True] * frame.shape[1])
                 filterColumns[options.index_icolumn] = False
-                masterFrame = masterFrame.loc[:, filterColumns]
+                frame = frame.loc[:, filterColumns]
                 if len(options.select_icolumns) > 0:
                     options.select_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.select_icolumns]
                 elif len(options.ignore_icolumns) > 0:
                     options.ignore_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.ignore_icolumns]
 
         if len(options.select_icolumns) > 0:
-            newMasterFrame = None
+            newFrame = None
             for i in options.select_icolumns:
-                column = masterFrame.iloc[:, i].to_frame()
-                newMasterFrame = column if newMasterFrame is None else pandas.concat([newMasterFrame, column], axis=1, verify_integrity=False, copy=True)
-            masterFrame = newMasterFrame
+                column = frame.iloc[:, i].to_frame()
+                newFrame = column if newFrame is None else pandas.concat([newFrame, column], axis=1, verify_integrity=False, copy=True)
+            frame = newFrame
         elif len(options.ignore_icolumns) > 0:
-            filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(masterFrame.shape[1])])
-            masterFrame = masterFrame.loc[:, filterColumns]
+            filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(frame.shape[1])])
+            frame = frame.loc[:, filterColumns]
 
-        options.traceCount = len([x for x in masterFrame.columns if not str(x).startswith(options.special_column_start)])
-        totalTraceCount += options.traceCount
+        inputOptions.traceCount += len([x for x in frame.columns if not str(x).startswith(options.special_column_start)])
+        masterFrames[_index] = (options, frame)
+        totalFrameCount += 1
 
-        masterFrames[_index] = masterFrame
-        if (options.print):
-            doneSomething = True
-            pFiles = f"Files: {', '.join(input['value'])}"
-            pGrid = f"Plot: {options.plot}  Grid: [ {options.row}{' - ' + str(options.row + options.rowspan - 1) if options.rowspan > 1 else ''} , {options.col}{' - ' + str(options.col + options.colspan - 1) if options.colspan > 1 else ''} ]"
-            pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
-            print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
-            print(masterFrame)
-            print(pSep)
-        data.append({'options': copy.deepcopy(options), 'frame': masterFrames[_index]})
-        options.traceOffset += options.traceCount
+    inputOptions.inputIndex = totalInputCount
+    totalTraceCount += inputOptions.traceCount
     totalInputCount += 1
 
-    updateRange(subplotGrid, [options.col + (options.colspan - 1), options.row + (options.rowspan - 1)])
-    if (options.row not in subplotGridDefinition):
-        subplotGridDefinition[options.row] = {}
-    if (options.col not in subplotGridDefinition[options.row]):
-        subplotGridDefinition[options.row][options.col] = {'rowspan': options.rowspan, 'colspan': options.colspan, 'secondary_y': options.y_secondary}
+    updateRange(subplotGrid, [inputOptions.col + (inputOptions.colspan - 1), inputOptions.row + (inputOptions.rowspan - 1)])
+    if (inputOptions.row not in subplotGridDefinition):
+        subplotGridDefinition[inputOptions.row] = {}
+    if (inputOptions.col not in subplotGridDefinition[inputOptions.row]):
+        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary}
 
-    subplotGridDefinition[options.row][options.col]['rowspan'] = max(options.rowspan, subplotGridDefinition[options.row][options.col]['rowspan'])
-    subplotGridDefinition[options.row][options.col]['colspan'] = max(options.colspan, subplotGridDefinition[options.row][options.col]['colspan'])
-    subplotGridDefinition[options.row][options.col]['secondary_y'] = options.y_secondary or subplotGridDefinition[options.row][options.col]['secondary_y']
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'] = max(inputOptions.rowspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'])
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'] = max(inputOptions.colspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'])
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y'] = inputOptions.y_secondary or subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y']
+
+    if (inputOptions.print):
+        doneSomething = True
+        pFiles = f"Files: {', '.join(input['value'])}, Frames: {len(masterFrames)}"
+        pGrid = f"Plot: {inputOptions.plot}  Grid: [ {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} , {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''} ]"
+        pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
+        print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
+        for _, f in masterFrames:
+            print(f)
+            print(pSep)
 
     if options.dataframe is not None:
         if options.dataframe.endswith(".bz2"):
             fDataframe = bz2.BZ2File(options.dataframe, mode='wb')
         else:
             fDataframe = open(options.dataframe, mode="wb")
-        pickle.dump(masterFrames, fDataframe, pickle.HIGHEST_PROTOCOL)
+        pickle.dump([f for _, f in masterFrames], fDataframe, pickle.HIGHEST_PROTOCOL)
         fDataframe.close()
         doneSomething = True
         print(f'Dataframe saved to {options.dataframe}')
+
+    data.append({'options': options, 'frames': [f for _, f in masterFrames]})
 
 
 if (len(args.output) == 0 and not args.script and args.quiet):
@@ -699,7 +720,7 @@ if (args.sort_files):
 
 
 # Building up the colour array
-requiredColours = totalTraceCount if args.per_trace_colours else totalInputCount
+requiredColours = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
 colours = args.colours if args.colours else list(args.colour_from.range_to(args.colour_to, requiredColours))
 colourIndex = 0
 
@@ -821,83 +842,83 @@ plotScript.write("""
 )""")
 
 currentInputIndex = None
+frameIndex = 0
 traceIndex = 0
-inputTraceIndex = 0
 for input in data:
     options = input['options']
-    frame = input['frame']
+    frames = input['frames']
     plotRange = []
-    if (options.inputIndex != currentInputIndex):
-        currentInputIndex = options.inputIndex
-        inputTraceIndex = 0
-
-    for colIndex, _ in enumerate(frame.columns):
-        fillcolour = colours[colourIndex % len(colours)]
-        markercolour = colour.Color(options.line_colour)
-        col = str(frame.columns[colIndex])
-        specialColumnCount = 4
-        _errors = None
-        _bases = None
-        _labels = None
-        _colours = None
-        if (col.startswith(options.special_column_start)):
-            continue
-        for nextColIndex in range(colIndex + 1, colIndex + 1 + specialColumnCount if colIndex + 1 + specialColumnCount <= len(frame.columns) else len(frame.columns)):
-            nextCol = str(frame.columns[nextColIndex])
-            if (not nextCol.startswith(options.special_column_start)):
+    inputTraceIndex = 0
+    inputFrameIndex = 0
+    for frame in frames:
+        frameTraceIndex = 0
+        for colIndex, _ in enumerate(frame.columns):
+            fillcolour = colours[colourIndex % len(colours)]
+            markercolour = colour.Color(options.line_colour)
+            col = str(frame.columns[colIndex])
+            specialColumnCount = 4
+            _errors = None
+            _bases = None
+            _labels = None
+            _colours = None
+            if (col.startswith(options.special_column_start)):
                 continue
-            if (nextCol == options.special_column_start + 'error') and (_errors is None):
-                _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-            elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
-                _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-            elif (nextCol == options.special_column_start + 'label') and (_labels is None):
-                _labels = frame.iloc[:, nextColIndex].values.tolist()
-            elif (nextCol == options.special_column_start + 'colour') and (_colours is None):
-                _colours = frame.iloc[:, nextColIndex].values.tolist()
-                _colours = [c if c is not None else fillcolour.hex for c in _colours]
+            for nextColIndex in range(colIndex + 1, colIndex + 1 + specialColumnCount if colIndex + 1 + specialColumnCount <= len(frame.columns) else len(frame.columns)):
+                nextCol = str(frame.columns[nextColIndex])
+                if (not nextCol.startswith(options.special_column_start)):
+                    continue
+                if (nextCol == options.special_column_start + 'error') and (_errors is None):
+                    _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
+                elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
+                    _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
+                elif (nextCol == options.special_column_start + 'label') and (_labels is None):
+                    _labels = frame.iloc[:, nextColIndex].values.tolist()
+                elif (nextCol == options.special_column_start + 'colour') and (_colours is None):
+                    _colours = frame.iloc[:, nextColIndex].values.tolist()
+                    _colours = [c if c is not None else fillcolour.hex for c in _colours]
 
-        if (options.plot == 'line'):
-            ydata = frame.iloc[:, colIndex].values.tolist() if not options.vertical else list(frame.index)
-            xdata = frame.iloc[:, colIndex].values.tolist() if options.vertical else list(frame.index)
-            updateRange(plotRange, [xdata, ydata])
-        elif (options.plot == 'bar'):
-            ydata = frame.iloc[:, colIndex].tolist() if options.vertical else list(frame.index)
-            xdata = frame.iloc[:, colIndex].tolist() if not options.vertical else list(frame.index)
-            if _bases is not None:
-                rxdata = xdata
-                rydata = ydata
-                if (options.horizontal):
-                    rxdata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(xdata, _bases)]
-                else:
-                    rydata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(ydata, _bases)]
-                updateRange(plotRange, [rxdata, rydata])
-            else:
+            if (options.plot == 'line'):
+                ydata = frame.iloc[:, colIndex].values.tolist() if not options.vertical else list(frame.index)
+                xdata = frame.iloc[:, colIndex].values.tolist() if options.vertical else list(frame.index)
                 updateRange(plotRange, [xdata, ydata])
-        else:  # Box and Violin
-            data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
-            index = f"['{col}'] * {len(data)}"
-            ydata = index if not options.vertical else data
-            xdata = index if options.vertical else data
-            updateRange(plotRange, [xdata, ydata])
+            elif (options.plot == 'bar'):
+                ydata = frame.iloc[:, colIndex].tolist() if options.vertical else list(frame.index)
+                xdata = frame.iloc[:, colIndex].tolist() if not options.vertical else list(frame.index)
+                if _bases is not None:
+                    rxdata = xdata
+                    rydata = ydata
+                    if (options.horizontal):
+                        rxdata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(xdata, _bases)]
+                    else:
+                        rydata = [a + b if (a is not None and b is not None) else a if a is not None else b for a, b in zip(ydata, _bases)]
+                    updateRange(plotRange, [rxdata, rydata])
+                else:
+                    updateRange(plotRange, [xdata, ydata])
+            else:  # Box and Violin
+                data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
+                index = f"['{col}'] * {len(data)}"
+                ydata = index if not options.vertical else data
+                xdata = index if options.vertical else data
+                updateRange(plotRange, [xdata, ydata])
 
-        traceName = col
-        if (inputTraceIndex < len(options.trace_names)):
-            traceName = options.trace_names[inputTraceIndex]
-        elif (options.use_name is not None):
-            traceName = options.use_name
+            traceName = col
+            if (inputTraceIndex < len(options.trace_names)):
+                traceName = options.trace_names[inputTraceIndex]
+            elif (options.use_name is not None):
+                traceName = options.use_name
 
-        if options.plot == 'line':
-            plotScript.write(f"""
+            if options.plot == 'line':
+                plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='{traceName}',
     legendgroup='{traceName}',
     mode='{options.line_mode}',""")
-            if (_colours is not None):
-                plotScript.write(f"""
+                if (_colours is not None):
+                    plotScript.write(f"""
     marker_color={_colours},
     line_color='{_colours}',""")
-            else:
-                plotScript.write(f"""
+                else:
+                    plotScript.write(f"""
     marker_color='{fillcolour.hex}',
     line_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
@@ -907,62 +928,62 @@ fig.add_trace(go.Scatter(
     line_width={options.line_width},
     y={ydata},
     x={xdata},""")
-            if (_labels is not None):
-                plotScript.write(f"""
+                if (_labels is not None):
+                    plotScript.write(f"""
     text={_labels},
     textposition='{options.line_text_position}',""")
-            if (_errors is not None):
-                plotScript.write(f"""
+                if (_errors is not None):
+                    plotScript.write(f"""
     error_{'y' if options.horizontal else 'x'}=dict(
         visible={options.show_error},
         type='data',
         symmetric=True,
         array={_errors},
     ),""")
-            plotScript.write(f"""
+                plotScript.write(f"""
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
-        elif options.plot == 'bar':
-            plotScript.write(f"""
+            elif options.plot == 'bar':
+                plotScript.write(f"""
 fig.add_trace(go.Bar(
     name='{traceName}',
     legendgroup='{traceName}',
     orientation='{'v' if options.vertical else 'h'}',""")
-            if (_colours is not None):
-                plotScript.write(f"""
+                if (_colours is not None):
+                    plotScript.write(f"""
     marker_color={_colours},""")
-            else:
-                plotScript.write(f"""
+                else:
+                    plotScript.write(f"""
     marker_color='{fillcolour.hex}',""")
-            plotScript.write(f"""
+                plotScript.write(f"""
     marker_line_color='{markercolour.hex}',
     marker_line_width={options.line_width},
     y={ydata},
     x={xdata},
     width={options.bar_width},""")
-            if (_labels is not None):
-                plotScript.write(f"""
+                if (_labels is not None):
+                    plotScript.write(f"""
     text={_labels},
     textposition='{options.bar_text_position}',""")
-            if (_bases is not None):
-                plotScript.write(f"""
+                if (_bases is not None):
+                    plotScript.write(f"""
     base={_bases},""")
-            if (_errors is not None):
-                plotScript.write(f"""
+                if (_errors is not None):
+                    plotScript.write(f"""
     error_{'x' if options.horizontal else 'y'}=dict(
         visible={options.show_error},
         type='data',
         symmetric=True,
         array={_errors},
     ),""")
-            plotScript.write(f"""
+                plotScript.write(f"""
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
-        elif options.plot == 'box':
-            markercolour = options.line_colour
-            plotScript.write(f"""
+            elif options.plot == 'box':
+                markercolour = options.line_colour
+                plotScript.write(f"""
 fig.add_trace(go.Box(
     name='{traceName}',
     legendgroup='{traceName}',
@@ -978,8 +999,8 @@ fig.add_trace(go.Box(
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
-            if options.box_mean == 'dot':
-                plotScript.write(f"""
+                if options.box_mean == 'dot':
+                    plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='mean_{traceName}',
     legendgroup='{traceName}',
@@ -992,15 +1013,15 @@ fig.add_trace(go.Scatter(
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
-        elif options.plot == 'violin':
-            if args.violin_mode == 'halfhalf':
-                side = 'negative' if inputTraceIndex % 2 == 0 else 'positive'
-            elif args.violin_mode[:4] == 'half':
-                side = 'positive'
-            else:
-                side = 'both'
-            markercolour = options.line_colour
-            plotScript.write(f"""
+            elif options.plot == 'violin':
+                if args.violin_mode == 'halfhalf':
+                    side = 'negative' if inputTraceIndex % 2 == 0 else 'positive'
+                elif args.violin_mode[:4] == 'half':
+                    side = 'positive'
+                else:
+                    side = 'both'
+                markercolour = options.line_colour
+                plotScript.write(f"""
 fig.add_trace(go.Violin(
     name='{traceName}',
     legendgroup='{traceName}',
@@ -1020,9 +1041,13 @@ fig.add_trace(go.Violin(
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
 """)
 
-        traceIndex += 1
-        inputTraceIndex += 1
-        colourIndex += 1 if args.per_trace_colours else 0
+            traceIndex += 1
+            frameTraceIndex += 1
+            inputTraceIndex += 1
+            colourIndex += 1 if args.per_trace_colours else 0
+        inputFrameIndex += 1
+        frameIndex += 1
+        colourIndex += 1 if args.per_frame_colours else 0
     colourIndex += 1 if args.per_input_colours else 0
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")

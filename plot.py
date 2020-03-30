@@ -169,7 +169,6 @@ detectDelimiter = ['\t', ';', ' ', ',']
 
 parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
-parser.add_argument("--sort-files", help="sort input files", choices=['asc', 'desc'])
 parser.add_argument("-c", "--colours", help="define colours", default=[], nargs='+', type=colour.Color)
 parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#084A91"), type=colour.Color)
 parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#97B5CA"), type=colour.Color)
@@ -202,8 +201,8 @@ parser.add_argument("--sort-rows", help="sort rows (default %(default)s)", defau
 parser.add_argument("--sort-rows-by", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sorting by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--dataframe", help="pickle pandas dataframe to file", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--print", help="print plotting information and data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--pickle-frames", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--file-frames", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 # Per File Plotting Arguments:
 parser.add_argument('--plot', choices=['line', 'bar', 'box', 'violin'], help='plot type', default='line', action=ChildAction, parent=inputFileArgument)
@@ -289,13 +288,14 @@ parser.add_argument("--margin-b", help="sets bottom margin", type=int, choices=R
 parser.add_argument("--margin-pad", help="sets padding", type=int, choices=Range(0, None), default=None)
 
 parser.add_argument("--orca", help="plotly-orca binary required to output every format except html (https://github.com/plotly/orca)", type=str, default=None)
-parser.add_argument("-o", "--output", default=[], nargs='+', help="write plot to file (html, pdf, svg, png,...)")
-parser.add_argument("--width", help="plot width (not compatible with html)", type=int, default=1000)
-parser.add_argument("--height", help="plot height (not compatible with html)", type=int)
 parser.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
-parser.add_argument("--script-only", action="store_true", help="do not execute plotting script (only comptabile with --script)", default=False)
+parser.add_argument("--print", help="print plotting information and data", default=False, action="store_true")
+parser.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
+parser.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png,...)", default=[], nargs='+')
+parser.add_argument("--width", help="output width", type=int, default=1000)
+parser.add_argument("--height", help="output height", type=int)
 
-parser.add_argument("-q", "--quiet", action="store_true", help="do not automatically open output file", default=False)
+parser.add_argument("-q", "--quiet", action="store_true", help="no warnings and don't open output file", default=False)
 
 args = parser.parse_args()
 
@@ -457,33 +457,33 @@ for input in args.input:
                 masterFrames[_index] = (options, frame)
         else:
             fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
+            options = copy.deepcopy(inputOptions)
 
-            localSeparator = inputOptions.separator
             # Check if we can detect the data delimiter if it was not passed in manually
-            if localSeparator is None:
+            if options.separator is None:
                 # Try to find delimiters
                 for tryDelimiter in detectDelimiter:
                     if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
-                        localSeparator = tryDelimiter
+                        options.separator = tryDelimiter
                         break
                 # Fallback if there is just one column and no index column
-                localSeparator = ' ' if localSeparator is None and options.no_index else localSeparator
-                if (localSeparator is None):
+                options.separator = ' ' if options.separator is None and options.no_index else options.separator
+                if (options.separator is None):
                     raise Exception('Could not identify data separator, please specify it manually')
 
             # Data delimiters clean up, remove multiple separators and separators from the end
-            reDelimiter = re.escape(localSeparator)
+            reDelimiter = re.escape(options.separator)
             fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
             # Tab and space delimiters, replace multiple occurences
-            if localSeparator == ' ' or localSeparator == '\t':
-                fFile = re.sub(reDelimiter + '{2,}', localSeparator, fFile)
+            if options.separator == ' ' or options.separator == '\t':
+                fFile = re.sub(reDelimiter + '{2,}', options.separator, fFile)
             # Parse the file
             fData = [
-                [None if val.lower() in considerAsNaN else val for val in x.split(localSeparator)]
+                [None if val.lower() in considerAsNaN else val for val in x.split(options.separator)]
                 for x in fFile.split('\n')
                 if (len(x) > 0) and  # Ignore empty lines
                 (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
-                (options.no_index or x.count(localSeparator) > 0)  # Ignore lines which contain no data
+                (options.no_index or x.count(options.separator) > 0)  # Ignore lines which contain no data
             ]
             fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
             if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
@@ -502,7 +502,7 @@ for input in args.input:
             if (not options.no_columns):
                 frame.columns = fData[0]
 
-            masterFrames.append((copy.deepcopy(inputOptions), frame))
+            masterFrames.append((options, frame))
 
     for _index, (options, frame) in enumerate(masterFrames):
         # Drop only columns/rows NaN values and replace NaN with None
@@ -673,6 +673,24 @@ for input in args.input:
         masterFrames[_index] = (options, frame)
         totalFrameCount += 1
 
+        if options.file_frames is not None and _index < len(options.file_frames):
+            doneSomething = True
+            sFile = options.file_frames[_index]
+            sep = '\t' if options.separator is None or len(options.separator) > 1 else options.separator
+            if sFile.endswith('.tsv'):
+                sep = '\t'
+            elif sFile.endswith('.csv'):
+                sep = ';'
+            else:
+                if not args.quiet and options.separator is not None and len(options.separator) > 1:
+                    print(f"WARNING: cannot use separator '{options.separator}' (length > 1) for exporting the data frame, default to '\\t'", file=sys.stderr)
+            frame.to_csv(sFile, sep=sep, na_rep='NaN')
+            if not args.quiet:
+                if (len(masterFrames) == 1):
+                    print(f'Frame saved to {options.file_frames[_index]}')
+                else:
+                    print(f'Frame {_index + 1}/{len(masterFrames)} saved to {options.file_frames[_index]}')
+
     inputOptions.inputIndex = totalInputCount
     totalTraceCount += inputOptions.traceCount
     totalInputCount += 1
@@ -687,37 +705,34 @@ for input in args.input:
     subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'] = max(inputOptions.colspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y'] = inputOptions.y_secondary or subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y']
 
-    if (inputOptions.print):
+    if (args.print):
         doneSomething = True
         pFiles = f"Files: {', '.join(input['value'])}, Frames: {len(masterFrames)}"
-        pGrid = f"Plot: {inputOptions.plot}  Grid: [ {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} , {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''} ]"
+        pGrid = f"Plot: {inputOptions.plot}  Grid: [ {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''}, {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} ]"
         pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
         print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
         for _, f in masterFrames:
             print(f)
             print(pSep)
 
-    if options.dataframe is not None:
-        if options.dataframe.endswith(".bz2"):
-            fDataframe = bz2.BZ2File(options.dataframe, mode='wb')
+    if options.pickle_frames is not None:
+        if options.pickle_frames.endswith(".bz2"):
+            fDataframe = bz2.BZ2File(options.pickle_frames, mode='wb')
         else:
-            fDataframe = open(options.dataframe, mode="wb")
+            fDataframe = open(options.pickle_frames, mode="wb")
         pickle.dump([f for _, f in masterFrames], fDataframe, pickle.HIGHEST_PROTOCOL)
         fDataframe.close()
         doneSomething = True
-        print(f'Dataframe saved to {options.dataframe}')
+        if not args.quiet:
+            print(f'Dataframe saved to {options.pickle_frames}')
 
     data.append({'options': options, 'frames': [f for _, f in masterFrames]})
 
 
-if (len(args.output) == 0 and not args.script and args.quiet):
-    if not doneSomething:
-        print("You asked me to be quiet, so what should I do?")
+if doneSomething and not args.browser and len(args.output) == 0 and not args.script:
     exit(0)
-
-if (args.sort_files):
-    data.sort(key=lambda x: x['frame'].mean().mean(), reverse=args.sort_files == 'asc')
-
+elif len(args.output) == 0 and not args.script:
+    args.browser = True
 
 # Building up the colour array
 requiredColours = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
@@ -770,8 +785,8 @@ parser.add_argument("--orca", help="path to plotly orca (https://github.com/plot
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
 parser.add_argument("--output", help="output file (html, png, jpg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
-parser.add_argument("--no-output", help="no output, just open an html plot", action="store_true", default=False)
-parser.add_argument("--quiet", help="do not automatically open output file", action="store_true", default={args.quiet})
+parser.add_argument("--browser", help="open plot in browser", action="store_true", default={args.browser})
+parser.add_argument("--quiet", help="no warnings and don't open output file", action="store_true", default={args.quiet})
 
 args = parser.parse_args()""")
 
@@ -1132,9 +1147,9 @@ if args.orca is None:
 
 plotScript.write(f"""
 
-if not args.output or args.no_output:
+if args.browser:
     fig.show()
-else:
+if len(args.output) > 0:
     if not args.quiet:
         openWith = None
         for app in ['xdg-open', 'open', 'start']:
@@ -1156,11 +1171,11 @@ else:
 """)
 
 plotScript.close()
-if not args.script_only and (len(args.output) > 0 or not args.quiet):
+if args.browser or len(args.output) > 0:
     subprocess.check_call(['python', plotScriptName])
 
 if not args.script:
     os.close(plotFd)
     os.remove(plotScriptName)
-else:
+elif not args.quiet:
     print(f"Plot script saved to {plotScriptName}")

@@ -33,7 +33,8 @@ defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
 
 parser = ArgumentParser(description="output number properties from numbers passed or read from stdin")
 parser.add_argument("--stdin", help=f"read from stdin even if numbers are provided", default=False, action="store_true")
-parser.add_argument("-p", "--properties", type=str, help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", nargs="+", default=defaultProps)
+parser.add_argument("--precision", help=f"force a specific precision", type=int, default=None)
+parser.add_argument("-p", "--properties", help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
 parser.add_argument("numbers", help="numbers to calculate properties on (default read from stdin)", default=None, nargs='*')
 args = parser.parse_args()
@@ -49,7 +50,6 @@ if args.stdin:
 numbers = numpy.array([float(x) for x in args.numbers if isFloat(x)])
 
 if (len(numbers) == 0):
-    print("No numbers provided!",file=sys.stderr)
     exit(1)
 
 results = []
@@ -77,8 +77,15 @@ for f in args.properties:
     else:
         results.append(props[f]['func'](numbers, float(parm)))
 
+resultFormat = '{:}'
+
+if args.precision:
+    resultFormat = f'{{:.{args.precision}f}}'
+
+results = [resultFormat.format(x) for x in results]
+
 if args.quiet:
-    print(' '.join(map(str, results)))
+    print(' '.join(results))
 else:
     lengths = [max(len(str(x)), len(str(y))) for x, y in zip(labels, results)]
     rowFormat = ' '.join([f"{{:>{length}}}" for length in lengths])

@@ -32,18 +32,25 @@ props = {
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
 
 parser = ArgumentParser(description="output number properties from numbers passed or read from stdin")
+parser.add_argument("--stdin", help=f"read from stdin even if numbers are provided", default=False, action="store_true")
 parser.add_argument("-p", "--properties", type=str, help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
 parser.add_argument("numbers", help="numbers to calculate properties on (default read from stdin)", default=None, nargs='*')
 args = parser.parse_args()
 
-if args.numbers is None:
+if args.numbers is None or len(args.numbers) == 0:
+    args.stdin = True
     args.numbers = []
 
-for line in sys.stdin.readlines():
-    args.numbers.extend(line.split())
+if args.stdin:
+    for line in sys.stdin.readlines():
+        args.numbers.extend(line.split())
 
 numbers = numpy.array([float(x) for x in args.numbers if isFloat(x)])
+
+if (len(numbers) == 0):
+    print("No numbers provided!",file=sys.stderr)
+    exit(1)
 
 results = []
 labels = None if args.quiet else []

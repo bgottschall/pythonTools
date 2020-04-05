@@ -51,6 +51,9 @@ if 'pval' in args.properties:
     from scipy import stats
     pValue = True
 
+if len(args.primary) == 0:
+    args.stdin = True
+
 if args.stdin:
     import sys
     stdinSet = []
@@ -62,7 +65,8 @@ if args.stdin:
         args.primary.extend(stdinSet)
 
 args.primary = numpy.array([float(x) for x in args.primary if isFloat(x)])
-args.others = numpy.array([float(x) for x in args.others if isFloat(x)])
+if pValue:
+    args.others = numpy.array([float(x) for x in args.others if isFloat(x)])
 
 if pValue and (len(args.primary) <= 1 or len(args.others) <= 1):
     raise Exception('number sets too small to calculate p-value statistics!')
@@ -76,8 +80,7 @@ labels = []
 
 for p in args.properties:
     if p[0] == 'p' and isFloat(p[1:]):
-        percentile = p[1:]
-        p = 'p%'
+        p, percentile = 'p%', p[1:]
         labels.append(props[p]['label'].replace('%', percentile))
         results.append(props[p]['func'](args.primary, float(percentile)))
     else:

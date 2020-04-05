@@ -69,3 +69,16 @@ plot.py -i lines.csv --colspan 2 -i scatter.csv --row 2 --colspan 1 --line-mode 
 ```
 ![Subplot Chart](/plots/subplots.png)
 
+# numprops.py
+
+Calculates number properties of the number set passed via paramters or from stdin. Filters any numbers from the given input and can combine number sets given via paramter and stdin. Adjustable precision and POSIX friendly output. Supports the the following properties: count, sum, minimum, maximum, average, median(q2), q1, q3, any percentile (p%), standard deviation, variance and p-value statistics (by providing a second number set).
+
+```
+> cat /proc/cpuinfo | grep MHz | numprops
+Count                Sum      Min      Max                 Q2        Avg                  σ
+   12 45696.465000000004 3781.705 3912.226 3787.1270000000004 3808.03875 43.673346303599956
+
+> cat /proc/cpuinfo | grep MHz | numprops --precision 2 -p min max avg p99
+    Min     Max     Avg     P99
+2444.84 3604.36 3173.42 3590.52
+```

@@ -950,6 +950,7 @@ fig.add_trace(go.Scatter(
     marker_symbol='{options.line_marker}',
     marker_size={options.line_marker_size},
     line_dash='{options.line_dash}',
+    line_shape='{options.line_shape}',
     line_width={options.line_width},
     y={ydata},
     x={xdata},""")

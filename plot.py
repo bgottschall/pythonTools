@@ -166,6 +166,7 @@ def updateRange(_range, dataList):
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
+specialColumns = ['error', 'offset', 'label', 'colour']
 
 parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
@@ -315,6 +316,7 @@ for input in args.input:
     options = input['children']
     options.ignore_icolumns = list(set(options.ignore_icolumns))
     options.ignore_columns = list(set(options.ignore_columns))
+    options.specialColumns = [options.special_column_start + x for x in specialColumns]
 
     if (options.opacity == 'auto' and
         ((options.plot == 'box' and 'overlay' in args.box_mode) or
@@ -676,8 +678,7 @@ for input in args.input:
         elif len(options.ignore_icolumns) > 0:
             filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(frame.shape[1])])
             frame = frame.loc[:, filterColumns]
-
-        inputOptions.traceCount += len([x for x in frame.columns if not str(x).startswith(options.special_column_start)])
+        inputOptions.traceCount += len([x for x in frame.columns if not str(x) in options.specialColumns])
         masterFrames[_index] = (options, frame)
         totalFrameCount += 1
 
@@ -881,16 +882,16 @@ for input in data:
             fillcolour = colours[colourIndex % len(colours)]
             markercolour = colour.Color(options.line_colour)
             col = str(frame.columns[colIndex])
-            specialColumnCount = 4
+            specialColumnCount = len(options.specialColumns)
             _errors = None
             _bases = None
             _labels = None
             _colours = None
-            if (col.startswith(options.special_column_start)):
+            if (col in options.specialColumns):
                 continue
             for nextColIndex in range(colIndex + 1, colIndex + 1 + specialColumnCount if colIndex + 1 + specialColumnCount <= len(frame.columns) else len(frame.columns)):
                 nextCol = str(frame.columns[nextColIndex])
-                if (not nextCol.startswith(options.special_column_start)):
+                if (nextCol not in options.specialColumns):
                     continue
                 if (nextCol == options.special_column_start + 'error') and (_errors is None):
                     _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]

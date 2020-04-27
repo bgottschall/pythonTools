@@ -515,10 +515,6 @@ for input in args.input:
             masterFrames.append((options, frame))
 
     for _index, (options, frame) in enumerate(masterFrames):
-        # Drop only columns/rows NaN values and replace NaN with None
-        frame.dropna(how='all', axis=0, inplace=True)
-        frame = frame.where((pandas.notnull(frame)), None)
-
         if (not options.no_index):
             iIndexColumn = 0
             if (options.index_icolumn is not None):
@@ -539,15 +535,19 @@ for input in args.input:
 
     if options.join != 'none':
         joinedFrame = None
+        newIndex = None
         revisedOptions = copy.deepcopy(inputOptions)
         for options, frame in masterFrames:
             if (inputOptions.join == 'index' and not inputOptions.no_index):
+                if newIndex is None:
+                    newIndex = frame.columns[options.index_icolumn]
                 frame.set_index(frame.columns[options.index_icolumn], inplace=True)
             elif not inputOptions.no_index and joinedFrame is None:
                 revisedOptions.index_icolumn = options.index_icolumn
             joinedFrame = frame if joinedFrame is None else pandas.concat([joinedFrame, frame], axis=1 if inputOptions.join == 'index' else 0, join='outer', verify_integrity=False, copy=True)
 
         if (inputOptions.join == 'index' and not inputOptions.no_index):
+            joinedFrame.index.name = newIndex
             joinedFrame.reset_index(inplace=True)
             revisedOptions.index_icolumn = 0
 
@@ -574,7 +574,8 @@ for input in args.input:
                         options.sort_columns_irow = lIndex.index(options.sort_columns_row)
                     if (options.sort_columns_irow >= frame.shape[0]):
                         raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
-                    sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
+                    # sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
+                    sortKey = frame.iloc[options.sort_columns_irow]
                 else:
                     sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
                 frame = frame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
@@ -593,7 +594,8 @@ for input in args.input:
                         options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
                     if (options.sort_rows_icolumn >= frame.shape[1]):
                         raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
-                    sortKey = frame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
+                    # sortKey = frame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
+                    sortKey = frame.iloc[:, options.sort_rows_icolumn]
                 else:
                     filterColumns = numpy.array([True] * frame.shape[1])
                     if options.index_icolumn is not False:
@@ -877,6 +879,11 @@ for input in data:
     inputTraceIndex = 0
     inputFrameIndex = 0
     for frame in frames:
+        # NaN cannot be plotted or used, cast it to None
+        # Drop only columns/rows NaN values and replace NaN with None
+        frame.dropna(how='all', axis=0, inplace=True)
+        frame = frame.where((pandas.notnull(frame)), None)
+       
         frameTraceIndex = 0
         for colIndex, _ in enumerate(frame.columns):
             fillcolour = colours[colourIndex % len(colours)]

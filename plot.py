@@ -949,7 +949,7 @@ fig.add_trace(go.Scatter(
                 if (_colours is not None):
                     plotScript.write(f"""
     marker_color={_colours},
-    line_color='{_colours}',""")
+    line_color='{_colours[0]}',""")
                 else:
                     plotScript.write(f"""
     marker_color='{fillcolour.hex}',

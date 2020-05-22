@@ -171,8 +171,9 @@ specialColumns = ['error', 'offset', 'label', 'colour']
 parser = argparse.ArgumentParser(description="Visualize csv files")
 # Global Arguments
 parser.add_argument("-c", "--colours", help="define colours", default=[], nargs='+', type=colour.Color)
-parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#084A91"), type=colour.Color)
-parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#97B5CA"), type=colour.Color)
+parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#022752"), type=colour.Color)
+parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#CCD9FB"), type=colour.Color)
+parser.add_argument("--colour-count", help="set explicit colour count for gradient (overrides per trace, frame and input colours)", type=int, choices=Range(1,), default=None)
 parser.add_argument("--per-trace-colours", help="one colours for each trace (default)", action='store_true', default=False)
 parser.add_argument("--per-frame-colours", help="one colour to each dataframe", action='store_true', default=False)
 parser.add_argument("--per-input-colours", help="one colour to each input file", action='store_true', default=False)
@@ -278,6 +279,7 @@ parser.add_argument("--font-family", help="font family (default %(default)s)", t
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
 
 parser.add_argument("--legend", help="quick setting the legend position (default %(default)s)", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
+parser.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default='unique')
 parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
@@ -574,8 +576,8 @@ for input in args.input:
                         options.sort_columns_irow = lIndex.index(options.sort_columns_row)
                     if (options.sort_columns_irow >= frame.shape[0]):
                         raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
-                    # sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
-                    sortKey = frame.iloc[options.sort_columns_irow]
+                    sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
+                    # sortKey = frame.iloc[options.sort_columns_irow]
                 else:
                     sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
                 frame = frame[sortKey.sort_values(ascending=options.sort_columns == 'asc').index]
@@ -745,10 +747,17 @@ if doneSomething and not args.browser and len(args.output) == 0 and not args.scr
 elif len(args.output) == 0 and not args.script:
     args.browser = True
 
+# Converting paths to absolute paths
+# In case a script is saved, those paths are still valid no matter from where its called
+for i, p in enumerate(args.output):
+    args.output[i] = os.path.abspath(p)
+
 # Building up the colour array
-requiredColours = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
+requiredColours = args.colour_count if args.colour_count is not None else totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
 colours = args.colours if args.colours else list(args.colour_from.range_to(args.colour_to, requiredColours))
 colourIndex = 0
+
+legendEntries = []
 
 plotFd = None
 if (args.script is None):
@@ -881,7 +890,7 @@ for input in data:
     for frame in frames:
         # NaN cannot be plotted or used, cast it to None
         # Drop only columns/rows NaN values and replace NaN with None
-        frame.dropna(how='all', axis=0, inplace=True)
+        frame = frame.dropna(how='all', axis=0)
         frame = frame.where((pandas.notnull(frame)), None)
        
         frameTraceIndex = 0
@@ -935,6 +944,12 @@ for input in data:
                 updateRange(plotRange, [xdata, ydata])
 
             traceName = col
+            showInLegend = args.legend_entries == 'all'
+            if traceName not in legendEntries:
+                if args.legend_entries == 'unique':
+                    showInLegend = True
+                legendEntries.append(traceName)
+
             if (inputTraceIndex < len(options.trace_names)):
                 traceName = options.trace_names[inputTraceIndex]
             elif (options.use_name is not None):
@@ -945,6 +960,7 @@ for input in data:
 fig.add_trace(go.Scatter(
     name='{traceName}',
     legendgroup='{traceName}',
+    showlegend={showInLegend},
     mode='{options.line_mode}',""")
                 if (_colours is not None):
                     plotScript.write(f"""
@@ -983,6 +999,7 @@ fig.add_trace(go.Scatter(
 fig.add_trace(go.Bar(
     name='{traceName}',
     legendgroup='{traceName}',
+    showlegend={showInLegend},
     orientation='{'v' if options.vertical else 'h'}',""")
                 if (_colours is not None):
                     plotScript.write(f"""
@@ -1022,7 +1039,7 @@ fig.add_trace(go.Bar(
 fig.add_trace(go.Box(
     name='{traceName}',
     legendgroup='{traceName}',
-    showlegend=True,
+    showlegend={showInLegend},
     y={ydata},
     x={xdata},
     boxpoints=False,
@@ -1061,7 +1078,7 @@ fig.add_trace(go.Scatter(
 fig.add_trace(go.Violin(
     name='{traceName}',
     legendgroup='{traceName}',
-    showlegend=True,
+    showlegend={showInLegend},
     scalegroup='trace{inputTraceIndex}',
     y={ydata},
     x={xdata},

@@ -806,11 +806,15 @@ parser.add_argument("--font-size", help="font size (default %(default)s)", type=
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
-parser.add_argument("--output", help="output file (html, png, jpg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
-parser.add_argument("--browser", help="open plot in browser", action="store_true", default={args.browser})
-parser.add_argument("--quiet", help="no warnings and don't open output file", action="store_true", default={args.quiet})
+parser.add_argument("--output", help="output file (html, png, jpeg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
+parser.add_argument("--browser", help="open plot in browser", action="store_true")
+parser.add_argument("--quiet", help="no warnings and don't open output file", action="store_true")
 
-args = parser.parse_args()""")
+args = parser.parse_args()
+
+if len(args.output) == 0:
+    args.browser = True
+""")
 
 plotScript.write("""
 
@@ -1211,7 +1215,12 @@ if len(args.output) > 0:
 
 plotScript.close()
 if args.browser or len(args.output) > 0:
-    subprocess.check_call(['python', plotScriptName])
+    cmdLine = ['python', plotScriptName]
+    if args.browser:
+        cmdLine.append('--browser')
+    if args.quiet:
+        cmdLine.append('--quiet')
+    subprocess.check_call(cmdLine)
 
 if not args.script:
     os.close(plotFd)

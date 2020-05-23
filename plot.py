@@ -747,10 +747,17 @@ if doneSomething and not args.browser and len(args.output) == 0 and not args.scr
 elif len(args.output) == 0 and not args.script:
     args.browser = True
 
-# Converting paths to absolute paths
+# Plotting script will be executed in this path context
+if args.script:
+    scriptContext = os.path.abspath(os.path.dirname(args.script))
+else:
+    scriptContext = os.path.abspath(os.getcwd())
+
+# Converting paths to new relative paths to the plotting script
 # In case a script is saved, those paths are still valid no matter from where its called
 for i, p in enumerate(args.output):
-    args.output[i] = os.path.abspath(p)
+    if not os.path.isabs(p):
+        args.output[i] = os.path.relpath(p, scriptContext)
 
 # Building up the colour array
 requiredColours = args.colour_count if args.colour_count is not None else totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
@@ -765,7 +772,7 @@ if (args.script is None):
     plotFd, plotScriptName = tempfile.mkstemp()
     plotScript = open(plotScriptName, 'w+')
 else:
-    plotScriptName = args.script
+    plotScriptName = os.path.abspath(args.script)
     plotScript = open(plotScriptName, 'w+')
 
 plotScript.write(f"""#!/usr/bin/env python3
@@ -1220,7 +1227,7 @@ if args.browser or len(args.output) > 0:
         cmdLine.append('--browser')
     if args.quiet:
         cmdLine.append('--quiet')
-    subprocess.check_call(cmdLine)
+    subprocess.check_call(cmdLine, cwd=scriptContext)
 
 if not args.script:
     os.close(plotFd)

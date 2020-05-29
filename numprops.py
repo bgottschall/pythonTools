@@ -50,7 +50,7 @@ parser.add_argument("--stdin", help=f"read from stdin even if numbers are provid
 parser.add_argument("--precision", help=f"force a specific precision", type=int, default=None)
 parser.add_argument("-p", "--properties", help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", type=str.lower, nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
-parser.add_argument("--others", help="other number set used e.g. to calculate p-value statistics", default=[], nargs='*')
+parser.add_argument("--secondary", help="secondary number set used e.g. to calculate p-value statistics", default=[], nargs='*')
 parser.add_argument("--debug", help="turn on debug output", action="store_true")
 parser.add_argument("primary", help="numbers to calculate properties on (default read from stdin)", default=[], nargs='*')
 args = parser.parse_args()
@@ -70,8 +70,8 @@ else:
 if args.debug:
     print(f'[DEBUG][L1] {l1}')
 
-if len(args.others) > 0:
-    l2 = numpy.array([float(x) for x in args.others if isFloat(x)])
+if len(args.secondary) > 0:
+    l2 = numpy.array([float(x) for x in args.secondary if isFloat(x)])
     if args.debug:
         print(f'[DEBUG][L2] {l2}')
 
@@ -81,12 +81,12 @@ labels = []
 for p in args.properties:
     arg = None
     prop = None
-    if p in props:
+    if p in props and not props[p]['argument']:
         prop = p
     else:
         for cp in props:
             if props[cp]['argument']:
-                pattern = re.compile(re.escape(cp).replace('\%', '([-+]?\d*\.\d+|\d+)', 1))
+                pattern = re.compile(re.escape(cp).replace('\%', '(.+)', 1))  # [-+]?\d*\.\d+|\d+)', 1))
                 reres = pattern.search(p)
                 if reres and len(reres.groups()) == 1:
                     arg = reres.group(1)
@@ -97,7 +97,7 @@ for p in args.properties:
 
     if props[prop]['secondary'] and l2 is None:
         if stdinConsumed:
-            raise Exception(f"Property '{p}' requires a second number set, provided via stdin or --others")
+            raise Exception(f"Property '{p}' requires a secondary number set, provided via stdin or --secondary")
         if args.debug:
             print('[DEBUG] no secondary number set given, reading from stdin')
         l2 = numbersFromStdIn()

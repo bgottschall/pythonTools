@@ -192,9 +192,13 @@ parser.add_argument("--index-column", help="set index column", default=None, typ
 parser.add_argument("--split-icolumn", help="split data along column index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--split-column", help="split datas along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--select-columns", help="select these column names", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--ignore-columns", help="ignore these column names", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-irows", help="select these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--ignore-irows", help="ignore these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--ignore-rows", help="ignore these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-columns", help="sort column (default %(default)s)", default='none', choices=['none', 'asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-columns-by", help="sort column after method or row (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'row'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--sort-columns-irow", help="sort column after this row index (requires sorting by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -605,6 +609,7 @@ for input in args.input:
                     sortKey = getattr(frame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
                 frame = frame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
 
+        # Column Selection
         if len(options.ignore_icolumns) > 0:
             options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < frame.shape[1]]
 
@@ -638,6 +643,41 @@ for input in args.input:
         if (len(options.select_icolumns) == 0) and selectColumns:
             raise Exception(f"No selected columns found or all are ignored in files {', '.join(input['value'])}!")
 
+        # Row Selection
+        if len(options.ignore_irows) > 0:
+            options.ignore_irows = [i for i in options.ignore_irows if i >= 0 and i < frame.shape[0]]
+
+        if len(options.ignore_rows) > 0:
+            for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
+                if r in options.ignore_rows:
+                    options.ignore_irows.append(i)
+            options.ignore_irows = list(set(options.ignore_irows))
+
+        selectRows = len(options.select_irows) > 0 or len(options.select_rows) > 0
+
+        if len(options.select_irows) > 0:
+            selectCount = len(options.select_irows)
+            options.select_irows = [i for i in options.select_irows if i >= 0 and i < frame.shape[0]]
+            if not args.quiet and (selectCount != len(options.select_irows)):
+                print(f"WARNING: some selected row indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
+
+        if len(options.select_rows) > 0:
+            selectedRows = []
+            for sr in options.select_rows:
+                for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
+                    if (sr == r):
+                        options.select_irows.append(i)
+                        selectedRows.append(r)
+            if not args.quiet and len(options.select_rows) != len(selectedRows):
+                print(f"WARNING: some selected rows where not found in files {', '.join(input['value'])}", file=sys.stderr)
+
+        if len(options.select_irows) > 0 and len(options.ignore_irows) > 0:
+            options.select_irows = [i for i in options.select_irows if i not in options.ignore_irows]
+
+        if (len(options.select_irows) == 0) and selectRows:
+            raise Exception(f"No selected rows found or all are ignored in files {', '.join(input['value'])}!")
+
+        # Frame splitting
         if (options.split_icolumn is not None) or (options.split_column is not None):
             iSplitColumn = None
             if (options.split_icolumn is not None):
@@ -661,6 +701,15 @@ for input in args.input:
 
     inputOptions.traceCount = 0
     for _index, (options, frame) in enumerate(masterFrames):
+
+        # Filter selected/ignored rows
+        if len(options.select_irows) > 0:
+            frame = frame.iloc[options.select_irows, :]
+        elif len(options.ignore_irows) > 0:
+            filterRows = numpy.array([False if i in options.ignore_irows else True for i in range(frame.shape[0])])
+            frame = frame.loc[filterRows, :]
+
+        # Filter selcted/ignored columns
         if (options.index_icolumn is not None):
             frame.set_index(frame.iloc[:, options.index_icolumn], inplace=True)
             # If the index column was explicitly selected, do not remove it
@@ -903,7 +952,7 @@ for input in data:
         # Drop only columns/rows NaN values and replace NaN with None
         frame = frame.dropna(how='all', axis=0)
         frame = frame.where((pandas.notnull(frame)), None)
-       
+
         frameTraceIndex = 0
         for colIndex, _ in enumerate(frame.columns):
             fillcolour = colours[colourIndex % len(colours)]

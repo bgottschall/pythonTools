@@ -2,6 +2,8 @@
 
 from argparse import ArgumentParser
 import numpy
+import re
+from scipy import stats
 
 
 def isFloat(val):
@@ -14,19 +16,31 @@ def isFloat(val):
         return False
 
 
+def numbersFromStdIn():
+    import sys
+    stdinSet = []
+    for line in sys.stdin.readlines():
+        stdinSet.extend(line.split())
+    return numpy.array([float(x) for x in stdinSet if isFloat(x)])
+
+
+# props = { propname : { 'label' : outputlabel, 'func' : propertyfunction(l1 or l1, arg), 'secondary' : }}
+# % in property name is taken as argument
+
 props = {
-    'count': {'label': 'Count', 'func': len},
-    'sum': {'label': 'Sum', 'func': numpy.sum},
-    'min': {'label': 'Min', 'func': numpy.min},
-    'max': {'label': 'Max', 'func': numpy.max},
-    'q1': {'label': 'Q1', 'func': lambda x: numpy.percentile(x, 25)},
-    'q2': {'label': 'Q2', 'func': lambda x: numpy.percentile(x, 50)},
-    'q3': {'label': 'Q3', 'func': lambda x: numpy.percentile(x, 75)},
-    'p%': {'label': 'P%', 'func': lambda x, y: numpy.percentile(x, y)},
-    'avg': {'label': 'Avg', 'func': numpy.mean},
-    'std': {'label': 'σ', 'func': numpy.std},
-    'var': {'label': 'σ²', 'func': numpy.var},
-    'pval': {'label': 'P-Value', 'func': lambda x, y: stats.ttest_ind(x, y, equal_var=False)[1]}
+    'count':      {'label': 'Count',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)    },
+    'sum':        {'label': 'Sum',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.sum(l1)},
+    'min':        {'label': 'Min',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.min(l1)},
+    'max':        {'label': 'Max',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.max(l1)},
+    'q1':         {'label': 'Q1',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 25)},
+    'q2':         {'label': 'Q2',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 50)},
+    'q3':         {'label': 'Q3',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 75)},
+    'p%':         {'label': 'P%',        'secondary': False, 'argument': True,  'func': lambda l1, l2, arg: numpy.percentile(l1, float(arg))},
+    'avg':        {'label': 'Avg',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
+    'std':        {'label': 'σ',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
+    'var':        {'label': 'σ²',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},
+    'pvalue':     {'label': 'P-Value',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
+    'spearmanr':  {'label': 'SpearmanR', 'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]}
 }
 
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
@@ -37,60 +51,69 @@ parser.add_argument("--precision", help=f"force a specific precision", type=int,
 parser.add_argument("-p", "--properties", help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", type=str.lower, nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
 parser.add_argument("--others", help="other number set used e.g. to calculate p-value statistics", default=[], nargs='*')
+parser.add_argument("--debug", help="turn on debug output", action="store_true")
 parser.add_argument("primary", help="numbers to calculate properties on (default read from stdin)", default=[], nargs='*')
 args = parser.parse_args()
 
-pValue = False
-if 'pval' in args.properties:
-    # One number set can be read from stdin, if both primary and other is empty we cannot calculate p-value statistics
-    if len(args.primary) == 0 and len(args.others) == 0:
-        raise Exception('two number sets are required to calculate p-value statistics, provide them via primary and --others or stdin')
-    # One number set is provided, read the other one from stdin
-    if len(args.primary) == 0 or len(args.others) == 0:
-        args.stdin = True
-    from scipy import stats
-    pValue = True
+l1 = None
+l2 = None
+stdinConsumed = False
 
 if len(args.primary) == 0:
-    args.stdin = True
+    if args.debug:
+        print('[DEBUG] no primary number set given, reading from stdin')
+    l1 = numbersFromStdIn()
+    stdinConsumed = True
+else:
+    l1 = numpy.array([float(x) for x in args.primary if isFloat(x)])
 
-if args.stdin:
-    import sys
-    stdinSet = []
-    for line in sys.stdin.readlines():
-        stdinSet.extend(line.split())
-    if pValue and len(args.others) == 0:
-        args.others = stdinSet
-    else:
-        args.primary.extend(stdinSet)
+if args.debug:
+    print(f'[DEBUG][L1] {l1}')
 
-args.primary = numpy.array([float(x) for x in args.primary if isFloat(x)])
-if pValue:
-    args.others = numpy.array([float(x) for x in args.others if isFloat(x)])
-
-if pValue and (len(args.primary) <= 1 or len(args.others) <= 1):
-    raise Exception('number sets too small to calculate p-value statistics!')
-    exit(1)
-
-if (len(args.primary) == 0):
-    exit(1)
+if len(args.others) > 0:
+    l2 = numpy.array([float(x) for x in args.others if isFloat(x)])
+    if args.debug:
+        print(f'[DEBUG][L2] {l2}')
 
 results = []
 labels = []
 
 for p in args.properties:
-    if p[0] == 'p' and isFloat(p[1:]):
-        p, percentile = 'p%', p[1:]
-        labels.append(props[p]['label'].replace('%', percentile))
-        results.append(props[p]['func'](args.primary, float(percentile)))
+    arg = None
+    prop = None
+    if p in props:
+        prop = p
     else:
-        if p not in props:
-            raise Exception(f"Could not find property '{p}'")
-        labels.append(props[p]['label'])
-        if p == 'pval':
-            results.append(props[p]['func'](args.primary, args.others))
-        else:
-            results.append(props[p]['func'](args.primary))
+        for cp in props:
+            if props[cp]['argument']:
+                pattern = re.compile(re.escape(cp).replace('\%', '([-+]?\d*\.\d+|\d+)', 1))
+                reres = pattern.search(p)
+                if reres and len(reres.groups()) == 1:
+                    arg = reres.group(1)
+                    prop = cp
+                    break
+    if prop is None:
+        raise Exception(f"Could not find property '{p}'")
+
+    if props[prop]['secondary'] and l2 is None:
+        if stdinConsumed:
+            raise Exception(f"Property '{p}' requires a second number set, provided via stdin or --others")
+        if args.debug:
+            print('[DEBUG] no secondary number set given, reading from stdin')
+        l2 = numbersFromStdIn()
+        if args.debug:
+            print(f'[DEBUG][L2] {l2}')
+
+    if props[prop]['argument']:
+        if args.debug:
+            print(f'[DEBUG][ARG] {arg}')
+        labels.append(props[prop]['label'].replace('%', arg, 1))
+    else:
+        labels.append(props[prop]['label'])
+
+    results.append(props[prop]['func'](l1, l2, arg))
+    if args.debug:
+        print(f'[DEBUG][{p}] {results[-1]}')
 
 resultFormat = '{:}'
 

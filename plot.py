@@ -269,6 +269,21 @@ parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", defaul
 parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-ticks", help="how to draw x ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-ticks", help="how to draw y ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tickmode", help="tick mode x-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tickmode", help="tick mode y-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-nticks", help="number of ticks on x-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-nticks", help="number of ticks on y-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tick0", help="first tick on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tick0", help="first tick on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-dtick", help="tick step on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-dtick", help="tick step on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tickvals", help="tick values on x-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tickvals", help="tick values on y-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-ticktext", help="tick text on x-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-ticktext", help="tick text on y-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+
 parser.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
@@ -1185,6 +1200,9 @@ fig.add_trace(go.Violin(
         plotScript.write(f"fig.update_xaxes(range=[{options.x_range_from}, {options.x_range_to}], col={options.col}, row={options.row})\n")
     plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+
     plotScript.write("\n\n")
 
 plotScript.write("\n\n")

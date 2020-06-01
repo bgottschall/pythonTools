@@ -40,7 +40,8 @@ props = {
     'std':        {'label': 'σ',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
     'var':        {'label': 'σ²',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},
     'pvalue':     {'label': 'P-Value',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
-    'spearmanr':  {'label': 'SpearmanR', 'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]}
+    'spearmanr':  {'label': 'SpearmanR', 'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]},
+    'pearsonr':   {'label': 'PearsonR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.pearsonr(l1, l2)[0]},
 }
 
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']

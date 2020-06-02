@@ -1019,16 +1019,17 @@ for input in data:
                 updateRange(plotRange, [xdata, ydata])
 
             traceName = col
-            showInLegend = args.legend_entries == 'all'
-            if traceName not in legendEntries:
-                if args.legend_entries == 'unique':
-                    showInLegend = True
-                legendEntries.append(traceName)
 
             if (inputTraceIndex < len(options.trace_names)):
                 traceName = options.trace_names[inputTraceIndex]
             elif (options.use_name is not None):
                 traceName = options.use_name
+
+            showInLegend = args.legend_entries == 'all'
+            if traceName not in legendEntries:
+                if args.legend_entries == 'unique':
+                    showInLegend = True
+                legendEntries.append(traceName)
 
             if options.plot == 'line':
                 plotScript.write(f"""

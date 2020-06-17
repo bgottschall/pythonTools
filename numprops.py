@@ -60,6 +60,9 @@ l1 = None
 l2 = None
 stdinConsumed = False
 
+if args.precision is not None and args.precision < 0:
+    args.precision = None
+
 if len(args.primary) == 0:
     if args.debug:
         print('[DEBUG] no primary number set given, reading from stdin')
@@ -67,6 +70,9 @@ if len(args.primary) == 0:
     stdinConsumed = True
 else:
     l1 = numpy.array([float(x) for x in args.primary if isFloat(x)])
+
+if len(l1) == 0:
+    raise Exception(f"Could not parse any numbers")
 
 if args.debug:
     print(f'[DEBUG][L1] {l1}')
@@ -116,12 +122,13 @@ for p in args.properties:
     if args.debug:
         print(f'[DEBUG][{p}] {results[-1]}')
 
-resultFormat = '{:}'
-
-if args.precision:
-    resultFormat = f'{{:.{args.precision}f}}'
-
-results = [resultFormat.format(x) for x in results]
+if args.precision is not None:
+    if args.precision == 0:
+        results = ['{:d}'.format(int(x)) for x in results]
+    else:
+        results = [f'{{:.{args.precision}f}}'.format(x) for x in results]
+else:
+    results = ['{:}'.format(x) for x in results]
 
 if args.quiet:
     print(' '.join(results))

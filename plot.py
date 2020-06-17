@@ -35,6 +35,7 @@ import bz2
 import sys
 import pickle
 import copy
+import textwrap
 
 
 def isFloat(val):
@@ -263,26 +264,28 @@ parser.add_argument("--x-range-from", help="x-axis start (default %(default)s)",
 parser.add_argument("--y-range-from", help="y-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--x-range-to", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-range-to", help="y-axis end (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks", default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-ticks", help="how to draw x ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-ticks", help="how to draw y ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tickmode", help="tick mode x-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tickmode", help="tick mode y-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-nticks", help="number of ticks on x-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-nticks", help="number of ticks on y-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tick0", help="first tick on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tick0", help="first tick on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-dtick", help="tick step on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-dtick", help="tick step on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-tickvals", help="tick values on x-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-tickvals", help="tick values on y-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--x-ticktext", help="tick text on x-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--y-ticktext", help="tick text on y-axis (only tick mode array) (default %(default)s)", default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-ticks", help="how to draw x ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-ticks", help="how to draw y ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tickmode", help="tick mode x-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tickmode", help="tick mode y-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-nticks", help="number of ticks on x-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-nticks", help="number of ticks on y-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tick0", help="first tick on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tick0", help="first tick on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-dtick", help="tick step on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-dtick", help="tick step on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tickvals", help="tick values on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tickvals", help="tick values on y-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-ticktext", help="tick text on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-ticktext", help="tick text on y-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--x-tickangle", help="tick angle on x-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--y-tickangle", help="tick angle on y-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -367,7 +370,9 @@ for input in args.input:
     options.x_range_to = None if options.x_range_to == 'auto' else float(options.x_range_to)
     options.bar_width = None if options.bar_width == 'auto' else float(options.bar_width)
     options.bar_shift = None if options.bar_shift == 'auto' else float(options.bar_shift)
-
+    options.y_tickangle = None if options.y_tickangle == 'auto' else float(options.y_tickangle)
+    options.x_tickangle = None if options.x_tickangle == 'auto' else float(options.x_tickangle)
+   
 args.bar_gap = None if args.bar_gap == 'auto' else float(args.bar_gap)
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
@@ -784,12 +789,13 @@ for input in args.input:
 
     if (args.print):
         doneSomething = True
-        pFiles = f"Files: {', '.join(input['value'])}, Frames: {len(masterFrames)}"
-        pGrid = f"Plot: {inputOptions.plot}  Grid: [ {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''}, {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} ]"
+        pFiles = f"Files: {', '.join(input['value'])}"
+        pGrid = f"Frames: {len(masterFrames)}, Plot: {inputOptions.plot}  Grid: [ {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''}, {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} ]"
         pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
-        print(pSep + '\n' + pFiles + '\n' + pGrid + '\n' + pSep)
+        print(pSep + '\n' + textwrap.fill(pFiles, width=80, subsequent_indent=' ') + '\n' + textwrap.fill(pGrid, width=80, subsequent_indent=' ') + '\n' + pSep)
         for _, f in masterFrames:
-            print(f)
+            with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.max_columns', None):
+                print(f)
             print(pSep)
 
     if options.pickle_frames is not None:
@@ -1201,8 +1207,8 @@ fig.add_trace(go.Violin(
         plotScript.write(f"fig.update_xaxes(range=[{options.x_range_from}, {options.x_range_to}], col={options.col}, row={options.row})\n")
     plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, tickangle={options.x_tickangle}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, tickangle={options.y_tickangle}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
 
     plotScript.write("\n\n")
 

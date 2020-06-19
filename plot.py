@@ -741,6 +741,8 @@ for input in args.input:
                     options.select_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.select_icolumns]
                 elif len(options.ignore_icolumns) > 0:
                     options.ignore_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.ignore_icolumns]
+        else:
+            frame = frame.reset_index(drop=True)
 
         if len(options.select_icolumns) > 0:
             newFrame = None

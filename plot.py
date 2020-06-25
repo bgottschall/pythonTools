@@ -441,11 +441,15 @@ totalInputCount = 0
 subplotGrid = [{'min': 1, 'max': 1}, {'min': 1, 'max': 1}]
 subplotGridDefinition = {}
 data = []
-defaultBottomMargin = False
-defaultLeftMargin = False
-defaultRightMargin = False
+
+# None means it will be set automatically to True/False
+defaultBottomMargin = True if args.x_master_title is not None else None
+defaultLeftMargin = True if args.y_master_title is not None else None
+defaultRightMargin = None
+# Those are never set automatically so either use True or False
 defaultTopMargin = False
 defaultPadMargin = False
+
 doneSomething = False
 
 for input in args.input:
@@ -1186,6 +1190,14 @@ fig.add_trace(go.Violin(
         frameIndex += 1
         colourIndex += 1 if args.per_frame_colours else 0
     colourIndex += 1 if args.per_input_colours else 0
+    # Find out if we need left, right and bottom margin:
+    if defaultLeftMargin is None and options.col == 1 and options.y_title and not options.y_secondary:
+        defaultLeftMargin = True
+    if defaultRightMargin is None and options.col + options.colspan - 1 == subplotGrid[0]['max'] and options.y_title is not None and options.y_secondary:
+        defaultRightMargin = True
+    if defaultBottomMargin is None and options.row + options.rowspan - 1 == subplotGrid[1]['max'] and options.x_title is not None:
+        defaultBottomMargin = True
+
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")
     plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")

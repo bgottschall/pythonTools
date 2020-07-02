@@ -883,6 +883,7 @@ import tempfile
 import argparse
 import plotly
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
@@ -943,7 +944,8 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
 """)
 
 plotScript.write(f"""\n\nplotly.io.templates.default = 'plotly_white'
-fig = plotly.subplots.make_subplots(
+
+fig = make_subplots(
     cols={subplotGrid[0]['max']},
     rows={subplotGrid[1]['max']},
     shared_xaxes={args.x_share},
@@ -1310,7 +1312,7 @@ if len(args.output) > 0:
 
 plotScript.close()
 if args.browser or len(args.output) > 0:
-    cmdLine = ['python', plotScriptName]
+    cmdLine = ['python3', plotScriptName]
     if args.browser:
         cmdLine.append('--browser')
     if args.quiet:

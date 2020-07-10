@@ -909,6 +909,8 @@ from plotly.subplots import make_subplots
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
+parser.add_argument("--font-colour", help="font colour (default %(default)s)", default='{args.font_colour.hex}')
+parser.add_argument("--font-family", help="font family (default %(default)s)", default='{args.font_family}')
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
@@ -1226,7 +1228,10 @@ fig.add_trace(go.Violin(
     if defaultLeftMargin is None and options.col == 1 and options.y_title and not options.y_secondary:
         defaultLeftMargin = True
     if defaultTopMargin is None and options.row == 1 and options.title:
+        # default top margin is 100 which is a bit much for just having subplot titles:
         defaultTopMargin = True
+        if args.margin_t is None and args.margins is None:
+            args.margin_t = 40
     if defaultRightMargin is None and options.col + options.colspan - 1 == subplotGrid[0]['max'] and options.y_title is not None and options.y_secondary:
         defaultRightMargin = True
     if defaultBottomMargin is None and options.row + options.rowspan - 1 == subplotGrid[1]['max'] and options.x_title is not None:
@@ -1290,8 +1295,12 @@ args.margin_pad = args.margin_pad if args.margin_pad is not None else args.margi
 plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.margin_l}, r={args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 
 plotScript.write(f"\n# Plot Font\n")
-plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size=args.font_size))\n")
-plotScript.write(f"{commentColour}fig.update_layout(font=dict(color='{args.font_colour.hex}'))\n")
+plotScript.write(f"""fig.update_layout(font=dict(
+    family=args.font_family,
+    size=args.font_size,
+{commentColour}    color=args.font_colour
+))
+""")
 
 
 plotScript.write("""

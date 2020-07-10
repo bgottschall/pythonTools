@@ -214,9 +214,10 @@ parser.add_argument("--file-frames", help="save data frames to text files (one f
 
 # Per File Plotting Arguments:
 parser.add_argument('--plot', choices=['line', 'bar', 'box', 'violin'], help='plot type', default='line', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--title", help="subplot title", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--use-name", help="use name for traces", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--trace-names", help="set individual trace names", default=[], sticky_default=True, type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
-parser.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=colour.Color, action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=colour.Color, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument('--row', type=int, choices=Range(1, None), help='subplot row (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--rowspan', type=int, choices=Range(1, None), help='subplot rowspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
@@ -292,12 +293,13 @@ parser.add_argument("--y-tickangle", help="tick angle on y-axis (default %(defau
 parser.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
+parser.add_argument("--master-title", help="plot master title", type=str, default=None)
 parser.add_argument("--x-master-title", help="x-axis master title", type=str, default=None)
 parser.add_argument("--y-master-title", help="y-axis master title", type=str, default=None)
 parser.add_argument("--x-share", help="share subplot x-axis (default %(default)s)", default=False, action="store_true")
 parser.add_argument("--y-share", help="share subplot y-axis (default %(default)s)", default=False, action="store_true")
-parser.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots (default %(default)s)", default=0.0, choices=Range(0, 1))
-parser.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots (default %(default)s)", default=0.0, choices=Range(0, 1))
+parser.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots (default %(default)s)", default=0.08, choices=Range(0, 1))
+parser.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots (default %(default)s)", default=0.08, choices=Range(0, 1))
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default=12)
 parser.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
@@ -391,6 +393,7 @@ for input in args.input:
     options.x_tickangle = None if options.x_tickangle == 'auto' else float(options.x_tickangle)
    
 args.bar_gap = None if args.bar_gap == 'auto' else float(args.bar_gap)
+args.master_title = f"'{args.master_title}'" if args.master_title is not None else None
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
 args.x_master_title = f"'{args.x_master_title}'" if args.x_master_title is not None else None
 
@@ -464,7 +467,7 @@ defaultBottomMargin = True if args.x_master_title is not None else None
 defaultLeftMargin = True if args.y_master_title is not None else None
 defaultRightMargin = None
 # Those are never set automatically so either use True or False
-defaultTopMargin = False
+defaultTopMargin = True if args.master_title is not None else None
 defaultPadMargin = False
 
 doneSomething = False
@@ -804,11 +807,13 @@ for input in args.input:
     if (inputOptions.row not in subplotGridDefinition):
         subplotGridDefinition[inputOptions.row] = {}
     if (inputOptions.col not in subplotGridDefinition[inputOptions.row]):
-        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary}
+        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary, 'title': inputOptions.title}
 
     subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'] = max(inputOptions.rowspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'] = max(inputOptions.colspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y'] = inputOptions.y_secondary or subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y']
+    if inputOptions.title is not None:
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['title'] = inputOptions.title
 
     if (args.print):
         doneSomething = True
@@ -960,6 +965,9 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
 
 """)
 
+subplotTitles = []
+print(subplotGridDefinition)
+
 plotScript.write(f"""\n\nplotly.io.templates.default = '{args.theme}'
 
 fig = make_subplots(
@@ -977,11 +985,13 @@ for r in range(1, subplotGrid[1]['max'] + 1):
     for c in range(1, subplotGrid[0]['max'] + 1):
         if (r in subplotGridDefinition and c in subplotGridDefinition[r]):
             plotScript.write(f"{{'rowspan': {subplotGridDefinition[r][c]['rowspan']}, 'colspan': {subplotGridDefinition[r][c]['colspan']}, 'secondary_y': {subplotGridDefinition[r][c]['secondary_y']}}},")
+            subplotTitles.append('' if subplotGridDefinition[r][c]['title'] is None else subplotGridDefinition[r][c]['title'])
         else:
             plotScript.write("None,")
     plotScript.write("],")
-plotScript.write("""
+plotScript.write(f"""
     ],
+    subplot_titles={subplotTitles}
 )""")
 
 currentInputIndex = None
@@ -1216,6 +1226,8 @@ fig.add_trace(go.Violin(
     # Find out if we need left, right and bottom margin:
     if defaultLeftMargin is None and options.col == 1 and options.y_title and not options.y_secondary:
         defaultLeftMargin = True
+    if defaultTopMargin is None and options.row == 1 and options.title:
+        defaultTopMargin = True
     if defaultRightMargin is None and options.col + options.colspan - 1 == subplotGrid[0]['max'] and options.y_title is not None and options.y_secondary:
         defaultRightMargin = True
     if defaultBottomMargin is None and options.row + options.rowspan - 1 == subplotGrid[1]['max'] and options.x_title is not None:
@@ -1257,6 +1269,7 @@ elif (args.violin_mode[:4] == 'half'):
     args.violin_mode = 'overlay'
 
 plotScript.write('# Global modes and paramters:\n')
+plotScript.write(f"fig.update_layout(title={args.master_title})\n")
 plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}', boxmode='{args.box_mode}', violinmode='{args.violin_mode}')\n")
 plotScript.write(f"fig.update_layout(bargap={args.bar_gap}, bargroupgap={args.bar_group_gap}, boxgap={args.box_gap}, boxgroupgap={args.box_group_gap}, violingap={args.violin_gap}, violingroupgap={args.violin_group_gap})\n")
 
@@ -1278,7 +1291,7 @@ args.margin_pad = args.margin_pad if args.margin_pad is not None else args.margi
 plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.margin_l}, r={args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 
 plotScript.write(f"\n# Plot Font\n")
-plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size=args.font_size, color='{args.font_colour.hex}'))\n")
+plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size=args.font_size))\n")
 plotScript.write(f"{commentColour}fig.update_layout(font=dict(color='{args.font_colour.hex}'))\n")
 
 

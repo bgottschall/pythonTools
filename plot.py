@@ -169,15 +169,16 @@ considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
 specialColumns = ['error', 'offset', 'label', 'colour']
 
-parser = argparse.ArgumentParser(description="Visualize csv files")
+parser = argparse.ArgumentParser(description="Visualize data")
 # Global Arguments
-parser.add_argument("-c", "--colours", help="define colours", default=[], nargs='+', type=colour.Color)
+parser.add_argument("--theme", help="theme to use (colour options only apply to 'gradient')", default='gradient', choices=["gradient", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
+parser.add_argument("-c", "--colours", help="define explicit colours (no gradient)", default=[], nargs='+', type=colour.Color)
 parser.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#022752"), type=colour.Color)
-parser.add_argument("--colour-to", help="colour gradient end(default %(default)s)", default=colour.Color("#CCD9FB"), type=colour.Color)
-parser.add_argument("--colour-count", help="set explicit colour count for gradient (overrides per trace, frame and input colours)", type=int, choices=Range(1,), default=None)
-parser.add_argument("--per-trace-colours", help="one colours for each trace (default)", action='store_true', default=False)
-parser.add_argument("--per-frame-colours", help="one colour to each dataframe", action='store_true', default=False)
-parser.add_argument("--per-input-colours", help="one colour to each input file", action='store_true', default=False)
+parser.add_argument("--colour-to", help="colour gradient end (default %(default)s)", default=colour.Color("#CCD9FB"), type=colour.Color)
+parser.add_argument("--colour-count", help="colours to use from gradient (overrides per trace, frame and input colours)", type=int, choices=Range(1,), default=None)
+parser.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
+parser.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
+parser.add_argument("--per-input-colours", help="one colour for each input file", action='store_true', default=False)
 
 inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
 # Per File Parsing Arguments
@@ -215,6 +216,7 @@ parser.add_argument("--file-frames", help="save data frames to text files (one f
 parser.add_argument('--plot', choices=['line', 'bar', 'box', 'violin'], help='plot type', default='line', action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--use-name", help="use name for traces", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parser.add_argument("--trace-names", help="set individual trace names", default=[], sticky_default=True, type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
+parser.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=colour.Color, action=ChildAction, parent=inputFileArgument)
 
 parser.add_argument('--row', type=int, choices=Range(1, None), help='subplot row (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parser.add_argument('--rowspan', type=int, choices=Range(1, None), help='subplot rowspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
@@ -301,7 +303,7 @@ parser.add_argument("--font-family", help="font family (default %(default)s)", t
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
 
 parser.add_argument("--legend", help="quick setting the legend position (default %(default)s)", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
-parser.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default='unique')
+parser.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default=None)
 parser.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parser.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
@@ -329,6 +331,21 @@ parser.add_argument("--height", help="output height", type=int)
 parser.add_argument("-q", "--quiet", action="store_true", help="no warnings and don't open output file", default=False)
 
 args = parser.parse_args()
+
+commentColour=''
+
+if args.theme == 'gradient':
+    args.theme = 'plotly_white'
+else:
+    # We have chosen a theme, so just comment all colour settings out
+    commentColour = '# '
+    # Better to show all legend entries now if not otherwise chosen
+    if args.legend_entries is None:
+        args.legend_entries = 'all'
+
+# Setting the legend entries default in case nothing was chosen
+if args.legend_entries is None:
+    args.legend_entries = 'unique'
 
 if (not args.per_trace_colours and not args.per_frame_colours and not args.per_input_colours) or (args.per_trace_colours):
     args.per_trace_colours = True
@@ -943,7 +960,7 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
 
 """)
 
-plotScript.write(f"""\n\nplotly.io.templates.default = 'plotly_white'
+plotScript.write(f"""\n\nplotly.io.templates.default = '{args.theme}'
 
 fig = make_subplots(
     cols={subplotGrid[0]['max']},
@@ -983,8 +1000,12 @@ for input in data:
         frame = frame.where((pandas.notnull(frame)), None)
 
         frameTraceIndex = 0
+
         for colIndex, _ in enumerate(frame.columns):
-            fillcolour = colours[colourIndex % len(colours)]
+            if options.trace_colours and frameTraceIndex < len(options.trace_colours):
+                fillcolour = options.trace_colours[frameTraceIndex]
+            else:
+                fillcolour = colours[colourIndex % len(colours)]
             markercolour = colour.Color(options.line_colour)
             col = str(frame.columns[colIndex])
             specialColumnCount = len(options.specialColumns)
@@ -1004,7 +1025,7 @@ for input in data:
                     _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'label') and (_labels is None):
                     _labels = frame.iloc[:, nextColIndex].values.tolist()
-                elif (nextCol == options.special_column_start + 'colour') and (_colours is None):
+                elif (nextCol == options.special_column_start + 'colour') and (_colours is None) and (frameTraceIndex >= len(options.trace_colours)):
                     _colours = frame.iloc[:, nextColIndex].values.tolist()
                     _colours = [c if c is not None else fillcolour.hex for c in _colours]
 
@@ -1058,8 +1079,8 @@ fig.add_trace(go.Scatter(
     line_color='{_colours[0]}',""")
                 else:
                     plotScript.write(f"""
-    marker_color='{fillcolour.hex}',
-    line_color='{fillcolour.hex}',""")
+{commentColour}    marker_color='{fillcolour.hex}',
+{commentColour}    line_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
     marker_symbol='{options.line_marker}',
     marker_size={options.line_marker_size},
@@ -1096,9 +1117,9 @@ fig.add_trace(go.Bar(
     marker_color={_colours},""")
                 else:
                     plotScript.write(f"""
-    marker_color='{fillcolour.hex}',""")
+{commentColour}    marker_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
-    marker_line_color='{markercolour.hex}',
+{commentColour}    marker_line_color='{markercolour.hex}',
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
@@ -1135,8 +1156,8 @@ fig.add_trace(go.Box(
     boxpoints=False,
     boxmean={True if options.box_mean == 'line' else False},
     width={options.box_width},
-    fillcolor='{fillcolour.hex}',
-    line_color='{markercolour.hex}',
+{commentColour}    fillcolor='{fillcolour.hex}',
+{commentColour}    line_color='{markercolour.hex}',
     line_width={options.line_width},
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
@@ -1150,8 +1171,8 @@ fig.add_trace(go.Scatter(
     showlegend=False,
     x={xdata if options.vertical else [statistics.mean(xdata)]},
     y={ydata if not options.vertical else [statistics.mean(ydata)]},
-    fillcolor='{fillcolour.hex}',
-    line_color='{markercolour.hex}',
+{commentColour}    fillcolor='{fillcolour.hex}',
+{commentColour}    line_color='{markercolour.hex}',
     line_width={options.line_width},
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
@@ -1172,8 +1193,8 @@ fig.add_trace(go.Violin(
     scalegroup='trace{inputTraceIndex}',
     y={ydata},
     x={xdata},
-    fillcolor='{fillcolour.hex}',
-    line_color='{options.line_colour.hex}',
+{commentColour}    fillcolor='{fillcolour.hex}',
+{commentColour}    line_color='{options.line_colour.hex}',
     line_width={options.line_width},
     side='{side}',
     width={options.violin_width},
@@ -1246,7 +1267,7 @@ plotScript.write(f"{'# ' if args.legend_x_anchor is None else ''}fig.update_layo
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}', bgcolor='rgba(255,255,255,0)'))\n")
 
 plotScript.write(f"\n# Layout Plot and Background\n")
-plotScript.write(f"fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plot_bgcolor='rgba(255, 255, 255, 0)')\n")
+plotScript.write(f"{commentColour}fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plot_bgcolor='rgba(255, 255, 255, 0)')\n")
 
 args.margin_b = args.margin_b if args.margin_b is not None else args.margins if args.margins is not None else None if defaultBottomMargin else 0
 args.margin_l = args.margin_l if args.margin_l is not None else args.margins if args.margins is not None else None if defaultLeftMargin else 0
@@ -1258,6 +1279,7 @@ plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.marg
 
 plotScript.write(f"\n# Plot Font\n")
 plotScript.write(f"fig.update_layout(font=dict(family='{args.font_family}', size=args.font_size, color='{args.font_colour.hex}'))\n")
+plotScript.write(f"{commentColour}fig.update_layout(font=dict(color='{args.font_colour.hex}'))\n")
 
 
 plotScript.write("""

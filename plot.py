@@ -966,7 +966,6 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
 """)
 
 subplotTitles = []
-print(subplotGridDefinition)
 
 plotScript.write(f"""\n\nplotly.io.templates.default = '{args.theme}'
 

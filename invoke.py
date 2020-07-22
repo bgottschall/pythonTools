@@ -264,16 +264,18 @@ def batchReplace(target: str, what: dict, wrapper = '%'):
 
 
 if args.compile:
-    print('#!/bin/sh\n')
+    shellScript = '#!/bin/sh\n\n'
 
-if (args.compile or (args.simulate and args.verbose)) and len(environment) > 0:
-    if args.compile:
-        print('export ', end='')
-    else:
-        print('/:$ export ', end='')
+if args.compile and len(environment) > 0:
+    shellScript +='export '
     for k in environment:
-        print(f'{k}={environment[k]} ', end='')
-    print('')
+        shellScript += '{k}={environment[k]} '
+    shellScript += '\n'
+elif (args.simulate and args.verbose) and len(environment) > 0:
+        print('/:$ export ', end='')
+        for k in environment:
+            print(f'{k}={environment[k]} ', end='')
+        print('')
 
 if not args.compile:
     environment = {**os.environ.copy(), **environment}
@@ -361,7 +363,7 @@ for benchmark in args.benchmarks:
                 print(f"WARNING: target executable '{benchSpec['dir'] + '/' + execName}' differs from specified executable '{benchSpec['exec']}'", file=sys.stderr)
 
             if args.compile:
-                print(f"# Execute workload {workload} of the '{input}' input of benchmark '{benchmark}'")
+                shellScript += f"# Execute workload {workload} of the '{input}' input of benchmark '{benchmark}'\n"
 
             invokeCmd = defaultInvoke + './' + execName + ' ' + benchSpec['params']
 
@@ -380,13 +382,13 @@ for benchmark in args.benchmarks:
                 invokeEnvironment = {**environment, **benchSpec['environment']}
 
             if args.compile:
-                print('(')
-                print(f"  cd \"{benchSpec['dir']}\"")
+                shellScript += '(\n'
+                shellScript += f"  cd \"{benchSpec['dir']}\"\n"
                 if len(benchSpec['environment']) > 0:
-                    print('  export ', end='')
+                    shellScript += '  export '
                     for k in benchSpec['environment']:
-                        print(f"{k}={benchSpec['environment'][k]} ", end='')
-                    print('')
+                        shellScript += f"{k}={benchSpec['environment'][k]} "
+                    shellScript += '\n'
             if isinstance(benchSpec['preCmd'], str):
                 if args.verbose:
                     if len(benchSpec['environment']) > 0:
@@ -396,7 +398,7 @@ for benchmark in args.benchmarks:
                         print('')
                     print(f"{benchSpec['dir']}:$ {benchSpec['preCmd']}")
                 if args.compile:
-                    print(f"  {benchSpec['preCmd']}")
+                    shellScript += f"  {benchSpec['preCmd']}\n"
                 if not args.simulate:
                     if subprocess.call(benchSpec['preCmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
                         failedInvokes += 1
@@ -410,7 +412,7 @@ for benchmark in args.benchmarks:
                     print('')
                 print(f"{benchSpec['dir']}:$ {invokeCmd}")
             if args.compile:
-                print(f"  {invokeCmd}")
+                shellScript += f"  {invokeCmd}\n"
             if not args.simulate:
                 if subprocess.call(invokeCmd, shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
                     failedInvokes += 1
@@ -424,13 +426,16 @@ for benchmark in args.benchmarks:
                         print('')
                     print(f"{benchSpec['dir']}:$ {benchSpec['postCmd']}")
                 if args.compile:
-                    print(f"  {benchSpec['postCmd']}")
+                    shellScript += f"  {benchSpec['postCmd']}\n"
                 if not args.simulate:
                     if subprocess.call(benchSpec['postCmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
                         failedInvokes += 1
             invokeCounter += 1
             if args.compile:
-                print(')')
+                shellScript += ')\n'
+
+if args.compile:
+    print(shellScript, end='')
 
 if failedInvokes != 0:
     print(f'WARNING: detected {failedInvokes} invocations with an error return code!', file=sys.stderr)

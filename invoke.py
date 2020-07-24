@@ -6,6 +6,7 @@ import sys
 import subprocess
 import copy
 from datetime import datetime
+from pathlib import Path
 
 invokeSpec = {}
 currentConfigPath = os.path.curdir
@@ -23,7 +24,7 @@ def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory = None):
     if isinstance(source['environment'], dict):
         benchSpec['environment'] = source['environment'] if benchSpec['environment'] is None else {**benchSpec['environment'], **source['environment']}
 
-    for k in ['params', 'preCmd', 'postCmd']:
+    for k in ['params', 'precmd', 'postcmd', 'stdout', 'stderr']:
         if isinstance(source[k], str):
             benchSpec[k] = source[k]
         elif source[k] == False:
@@ -84,13 +85,13 @@ parser.add_argument("-c", "--config", help="use this invoke specification", acti
 parser.add_argument("-w", "--wrapper", help="Use these invoke wrappers", action="append", default=[])
 parser.add_argument("-e", "--environment", help="Use these invoke environments", action="append", default=[])
 parser.add_argument("-s", "--suite", help="Invoke these benchmark suites", action="append", default=[])
-parser.add_argument("-i", "--input", help="Use these input sets", nargs='+', action="extend", default=[])
-parser.add_argument("-v", "--variable", help="define varibles e.g. -v var=test", nargs='+', action="extend", default=[])
+parser.add_argument("-i", "--input", help="Use these input sets", action="append", default=[])
+parser.add_argument("-v", "--variable", help="define varibles e.g. -v var=test", action="append", default=[])
 parser.add_argument("-f", "--force", help="ignore benchmark invocations that could not be resolved", action="store_true", default=False)
 parser.add_argument("--stdout", help="redirect stdout from benchmark invocation", default=False)
 parser.add_argument("--stderr", help="reiderct stderr from benchmark invocation", default=False)
-parser.add_argument("--pre-cmd", help="execute this command before each benchmark invocation", default=False)
-parser.add_argument("--post-cmd", help="execute this command after each benchmark invocation", default=False)
+parser.add_argument("--precmd", help="execute this command before each benchmark invocation", default=False)
+parser.add_argument("--postcmd", help="execute this command after each benchmark invocation", default=False)
 parser.add_argument("-l", "--list", help="Show available benchmarks, suites, wrappers, environments and variables", action="store_true", default=False)
 
 parser.add_argument("--compile", help="compile shell script", action="store_true", default=False)
@@ -139,21 +140,17 @@ benchmarksAvailable = False
 ensureDictionaryKeys(invokeSpec, ['specs', 'variables', 'wrappers', 'environments', 'suites'])
 if invokeSpec['specs'] is not None:
     for spec in invokeSpec['specs']:
-        ensureDictionaryKeys(spec, ['dir', 'preCmd', 'postCmd', 'environment', 'input' , 'benchmarks'])
+        ensureDictionaryKeys(spec, ['dir', 'precmd', 'postcmd', 'environment', 'stdout', 'stderr', 'input' , 'benchmarks'])
         if spec['benchmarks'] is not None:
             benchmarksAvailable = benchmarksAvailable or len(spec['benchmarks']) > 0
             for b in spec['benchmarks']:
-                ensureDictionaryKeys(spec['benchmarks'][b], ['desc', 'dir', 'exec', 'params', 'preCmd', 'postCmd', 'inputs', 'environment'])
+                ensureDictionaryKeys(spec['benchmarks'][b], ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'input'])
                 if spec['benchmarks'][b]['inputs'] is not None:
                     for i in spec['benchmarks'][b]['inputs']:
-                        ensureDictionaryKeys(spec['benchmarks'][b]['inputs'][i], ['dir', 'exec', 'params', 'preCmd', 'postCmd', 'workloads', 'environment'])
+                        ensureDictionaryKeys(spec['benchmarks'][b]['inputs'][i], ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'workloads'])
                         if spec['benchmarks'][b]['inputs'][i]['workloads'] is not None:
                             for w in spec['benchmarks'][b]['inputs'][i]['workloads']:
-                                ensureDictionaryKeys(w, ['dir', 'exec', 'params', 'preCmd', 'postCmd', 'environment'])
-
-if invokeSpec['suites'] is not None:
-    for s in invokeSpec['suites']:
-        ensureDictionaryKeys(invokeSpec['suites'][s], ['desc', 'benchmarks'])
+                                ensureDictionaryKeys(w, ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment'])
 
 if invokeSpec['variables'] is None:
     invokeSpec['variables'] = {}
@@ -234,6 +231,7 @@ if len(args.benchmarks) == 0:
 # Make sure its all string
 for v in invokeSpec['variables']:
     invokeSpec['variables'][v] = str(invokeSpec['variables'][v])
+           
 
 # Lets build the default Invoke CMD line
 defaultInvoke = ''
@@ -287,25 +285,25 @@ if args.simulate and len(globalEnvironment) > 0:
         print(f'{k}={globalEnvironment[k]} ', end='')
     print('')
 
+for d in ['outdir', 'output']:
+    if d in invokeSpec['variables']:
+        if os.path.isabs(invokeSpec['variables'][d]) and not os.path.exists(invokeSpec['variables'][d]):
+            if args.compile:
+                shellScript += f"mkdir -p {invokeSpec['variables'][d]} 2>/dev/null || true\n"
+            if args.simulate:
+                print(f"/:$ mkdir -p {invokeSpec['variables'][d]} || true")
+            if not args.compile and not args.simulate:
+                try:
+                    Path(invokeSpec['variables'][d]).mkdir(parents=True, exist_ok=True)
+                except Exception:
+                    pass
+
+if args.compile:
+    shellScript += '\n'
+
 invokeCounter = 0
 failedInvokes = []
-
-# Truncate/Create redirect output files
-if args.stdout != False:
-    if args.compile:
-        shellScript += f"> {args.stdout}\n"
-    elif not args.simulate:
-        with open(args.stdout, 'w'): pass
-    else:
-        print(f'/:$ > {args.stdout}')
-
-if args.stderr != False:
-    if args.compile:
-        shellScript += f"> {args.stderr}\n"
-    elif not args.simulate:
-        with open(args.stderr, 'w'): pass
-    else:
-        print(f'/:$ > {args.stderr}')
+outputFiles = []
 
 for benchmark in args.benchmarks:
     benchmarkFound = False
@@ -320,8 +318,10 @@ for benchmark in args.benchmarks:
             'dir' : spec['dir'] if spec['dir'] is not None else os.path.curdir,
             'exec' : None,
             'params' : None,
-            'preCmd' : spec['preCmd'],
-            'postCmd' : spec['postCmd'],
+            'precmd' : spec['precmd'],
+            'postcmd' : spec['postcmd'],
+            'stdout' : spec['stdout'],
+            'stderr' : spec['stderr'],
             'environment': {}
         }
 
@@ -393,10 +393,21 @@ for benchmark in args.benchmarks:
                 if benchSpec['params'] is None:
                     benchSpec['params'] = ''
 
-                if args.pre_cmd:
-                    benchSpec['preCmd'] = args.pre_cmd
-                if args.post_cmd:
-                    benchSpec['postCmd'] = args.post_cmd
+                if args.precmd:
+                    benchSpec['precmd'] = args.precmd
+                if args.postcmd:
+                    benchSpec['postcmd'] = args.postcmd
+
+                if args.stdout:
+                    if os.path.isabs(args.stdout):
+                        benchSpec['stdout'] = os.path.abspath(args.stdout)
+                    else:
+                        benchSpec['stdout'] = os.path.abspath(os.path.curdir + '/' + args.stdout)
+                if args.stderr:
+                    if os.path.isabs(args.stderr):
+                        benchSpec['stderr'] = os.path.abspath(args.stderr)
+                    else:
+                        benchSpec['stderr'] = os.path.abspath(os.path.curdir + '/' + args.stderr)
 
                 benchSpec['dir'] = batchReplace(benchSpec['dir'], replaceVars)
                 benchSpec['exec'] = batchReplace(benchSpec['exec'], replaceVars)
@@ -416,7 +427,7 @@ for benchmark in args.benchmarks:
                     if args.simulate:
                         print(f"/:$ mkdir -p {benchSpec['dir']}")
                     else:
-                        os.mkdir(benchSpec['dir'])
+                        Path(benchSpec['dir']).mkdir(parents=True, exist_ok=True)
 
 
                 benchSpec['dir'] = os.path.abspath(benchSpec['dir'])
@@ -441,24 +452,79 @@ for benchmark in args.benchmarks:
 
                 invokeCmd = defaultInvoke + './' + execName + ' ' + benchSpec['params']
 
-                if args.stdout and ' >' not in benchSpec['params']:
-                    invokeCmd += ' >>' + args.stdout
-                if args.stderr and ' 2>' not in benchSpec['params']:
-                    invokeCmd += ' 2>>' + args.stderr
 
                 benchSpec['environment'] = {**benchSpec['environment'], **globalVarEnvironment}
 
                 # Postprocess the invoke cmd lines after variables
                 invokeCmd = batchReplace(invokeCmd, replaceVars)
-                if isinstance(benchSpec['preCmd'], str):
-                    benchSpec['preCmd'] = batchReplace(benchSpec['preCmd'])
-                if isinstance(benchSpec['postCmd'], str):
-                    benchSpec['postCmd'] = batchReplace(benchSpec['postCmd'])
+                if isinstance(benchSpec['precmd'], str):
+                    benchSpec['precmd'] = batchReplace(benchSpec['precmd'], replaceVars)
+                if isinstance(benchSpec['postcmd'], str):
+                    benchSpec['postcmd'] = batchReplace(benchSpec['postcmd'], replaceVars)
+
+                if isinstance(benchSpec['stdout'], str):
+                    benchSpec['stdout'] = batchReplace(benchSpec['stdout'], replaceVars)
+                if isinstance(benchSpec['stderr'], str):
+                    benchSpec['stderr'] = batchReplace(benchSpec['stderr'], replaceVars)
 
                 benchSpec['environment'] = batchReplace(benchSpec['environment'], replaceVars)
 
                 if not args.compile:
                     invokeEnvironment = {**os.environ.copy(), **subEnvironment, **benchSpec['environment'], **globalEnvironment}
+
+                if benchSpec['stdout'] is not None:
+                    if not os.path.exists(os.path.dirname(benchSpec['stdout'])) and benchSpec['stdout'] not in outputFiles:
+                        if args.compile:
+                            shellScript += f"mkdir -p {os.path.dirname(benchSpec['stdout'])}\n"
+                        if args.simulate:
+                            print(f"/:$ mkdir -p {os.path.dirname(benchSpec['stdout'])}")
+                        if not args.simulate:
+                            Path(benchSpec['stdout']).mkdir(parents=True, exist_ok=True)
+
+                    if benchSpec['stdout'] not in outputFiles:
+                        outputFiles.append(benchSpec['stdout'])
+                        if args.compile or args.simulate:
+                            if args.compile:
+                                shellScript += f"> {benchSpec['stdout']}\n"
+                            else:
+                                print(f"/:$ > {benchSpec['stdout']}")
+                        else:
+                            benchSpec['stdout'] = open(benchSpec['stdout'], 'w')
+                    elif not args.compile and not args.simulate:
+                        benchSpec['stdout'] = open(benchSpec['stdout'], 'a')
+
+                    if args.compile or args.simulate:
+                        if args.stdout and os.path.isabs(args.stdout):
+                            invokeCmd += f" >>{benchSpec['stdout']}"
+                        else:
+                            invokeCmd += f" >>{os.path.relpath(benchSpec['stdout'], benchSpec['dir'])}"
+
+                if benchSpec['stderr'] is not None:
+                    if not os.path.exists(os.path.dirname(benchSpec['stderr'])) and not benchSpec['stderr'] in outputFiles:
+                        if args.compile:
+                            shellScript += f"mkdir -p {os.path.dirname(benchSpec['stderr'])}\n"
+                        if args.verbose:
+                            print(f"/:$ mkdir -p {os.path.dirname(benchSpec['stderr'])}")
+                        if not args.simulate:
+                            Path(benchSpec['stderr']).mkdir(parents=True, exist_ok=True)
+
+                    if benchSpec['stderr'] not in outputFiles:
+                        outputFiles.append(benchSpec['stderr'])
+                        if args.compile or args.simulate:
+                            if args.compile:
+                                shellScript += f"> {benchSpec['stderr']}\n"
+                            else:
+                                print(f"/:$ > {benchSpec['stderr']}")
+                        else:
+                            benchSpec['stderr'] = open(benchSpec['stderr'], 'w')
+                    elif not args.compile and not args.simulate:
+                        benchSpec['stderr'] = open(benchSpec['stderr'], 'a')
+
+                    if args.compile or args.simulate:
+                        if args.stderr and os.path.isabs(args.stderr):
+                            invokeCmd += f" 2>>{benchSpec['stderr']}"
+                        else:
+                            invokeCmd += f" 2>>{os.path.relpath(benchSpec['stderr'], benchSpec['dir'])}"
 
                 if args.compile:
                     shellScript += '(\n'
@@ -477,37 +543,37 @@ for benchmark in args.benchmarks:
                 if args.verbose and len(benchSpec['environment']) > 0:
                     print(f"Setting environment to {benchSpec['environment']}")
 
-                if isinstance(benchSpec['preCmd'], str):
+                if isinstance(benchSpec['precmd'], str):
                     if args.verbose:
-                        print(f"Executing pre invoke command {benchSpec['preCmd']}")
+                        print(f"Executing pre invoke command {benchSpec['precmd']}")
                     if args.simulate:
-                        print(f"{benchSpec['dir']}:$ {benchSpec['preCmd']}")
+                        print(f"{benchSpec['dir']}:$ {benchSpec['precmd']}")
                     elif not args.compile:
-                        if subprocess.call(benchSpec['preCmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
-                            failedInvokes.append(f"{benchmark}-preCmd")
+                        if subprocess.call(benchSpec['precmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
+                            failedInvokes.append(f"{benchmark}-precmd")
                     if args.compile:
-                        shellScript += f"  {benchSpec['preCmd']}\n"
+                        shellScript += f"  {benchSpec['precmd']}\n"
 
                 if args.verbose:
                     print(f"Invoke benchmark '{invokeCmd}'")
                 if args.simulate:
                     print(f"{benchSpec['dir']}:$ {invokeCmd}")
                 elif not args.compile:
-                    if subprocess.call(invokeCmd, shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
+                    if subprocess.call(invokeCmd, shell=True, cwd=benchSpec['dir'], env=invokeEnvironment, stdout=benchSpec['stdout'], stderr=benchSpec['stdin']) != 0:
                         failedInvokes.append(f"{benchmark}")
                 if args.compile:
                     shellScript += f"  {invokeCmd}\n"
 
-                if isinstance(benchSpec['postCmd'], str):
+                if isinstance(benchSpec['postcmd'], str):
                     if args.verbose:
-                        print(f"Executing post invoke command {benchSpec['postCmd']}")
+                        print(f"Executing post invoke command {benchSpec['postcmd']}")
                     if args.simulate:
-                        print(f"{benchSpec['dir']}:$ {benchSpec['postCmd']}")
+                        print(f"{benchSpec['dir']}:$ {benchSpec['postcmd']}")
                     elif not args.compile:
-                        if subprocess.call(benchSpec['postCmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
-                            failedInvokes.append(f"{benchmark}-postCmd")
+                        if subprocess.call(benchSpec['postcmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
+                            failedInvokes.append(f"{benchmark}-postcmd")
                     if args.compile:
-                        shellScript += f"  {benchSpec['postCmd']}\n"
+                        shellScript += f"  {benchSpec['postcmd']}\n"
 
                 invokeCounter += 1
 

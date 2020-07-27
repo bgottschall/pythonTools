@@ -8,6 +8,8 @@ import copy
 from datetime import datetime
 from pathlib import Path
 
+invokePyVersion = 0.1
+
 invokeSpec = {}
 currentConfigPath = os.path.curdir
 
@@ -104,10 +106,15 @@ parser.add_argument("--compile", help="compile shell script", action="store_true
 parser.add_argument("--simulate", help="simulate invocation with verbose output", action="store_true", default=False)
 parser.add_argument("--prepare", help="create directories and links", action="store_true", default=False)
 parser.add_argument("--verbose", help="verbose output", action="store_true", default=False)
+parser.add_argument("--version", help="print version number", action="store_true", default=False)
 
 parser.add_argument("benchmarks", help="Invoke these benchmarks", nargs="*", default=[])
 
 args = parser.parse_args();
+
+if args.version:
+    print(f'invoke.py version {invokePyVersion} -- sourced at https://github.com/bgottschall/pythonTools/blob/master/invoke.py')
+    exit(0)
 
 if args.simulate:
     print('Simulating, no invocations or changes to the filesystems will be made!')
@@ -467,6 +474,9 @@ for benchmark in args.benchmarks:
                     if sDate == '${NOW}':
                         shellScript +='NOW="$(date +\'%Y-%m-%d_%H%M%S\')"\n'
 
+                if args.verbose:
+                    print(f"Executing benchmark '{benchmark}', input '{input}', workload {workload}")
+
                 if not os.path.exists(benchSpec['dir'] + '/' + execName):
                     if args.verbose:
                         print(f"Symlinking '{benchSpec['exec']}' to '{benchSpec['dir'] + '/' + execName}'")
@@ -584,21 +594,27 @@ for benchmark in args.benchmarks:
 
                 if not args.prepare and isinstance(benchSpec['precmd'], str):
                     if args.verbose:
-                        print(f"Executing pre invoke command {benchSpec['precmd']}")
+                        print(f"Executing pre invoke command '{benchSpec['precmd']}'")
                     if args.simulate:
                         print(f"{benchSpec['dir']}:$ {benchSpec['precmd']}")
                     elif not args.prepare and not args.compile:
-                        if subprocess.call(benchSpec['precmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
+                        ret = subprocess.call(benchSpec['precmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
+                        if ret != 0:
+                            if args.verbose:
+                                print(f"Execution failed with return code {ret}")
                             failedInvokes.append(f"{benchmark}-precmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['precmd']}\n"
 
                 if not args.prepare and args.verbose:
-                    print(f"Invoke benchmark '{invokeCmd}'")
+                    print(f"Invoke command line '{invokeCmd}'")
                 if args.simulate:
                     print(f"{benchSpec['dir']}:$ {invokeCmd}")
                 elif not args.prepare and not args.compile:
-                    if subprocess.call(invokeCmd, shell=True, cwd=benchSpec['dir'], env=invokeEnvironment, stdout=benchSpec['stdout'], stderr=benchSpec['stderr']) != 0:
+                    ret = subprocess.call(invokeCmd, shell=True, cwd=benchSpec['dir'], env=invokeEnvironment, stdout=benchSpec['stdout'], stderr=benchSpec['stderr'])
+                    if ret != 0:
+                        if args.verbose:
+                            print(f"Execution failed with return code {ret}")
                         failedInvokes.append(f"{benchmark}")
                 if args.compile:
                     shellScript += f"  {invokeCmd}\n"
@@ -609,7 +625,10 @@ for benchmark in args.benchmarks:
                     if args.simulate:
                         print(f"{benchSpec['dir']}:$ {benchSpec['postcmd']}")
                     elif not args.compile:
-                        if subprocess.call(benchSpec['postcmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment) != 0:
+                        ret = subprocess.call(benchSpec['postcmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
+                        if ret != 0:
+                            if args.verbose:
+                                print(f"Execution failed with return code {ret}")
                             failedInvokes.append(f"{benchmark}-postcmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['postcmd']}\n"

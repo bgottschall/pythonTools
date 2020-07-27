@@ -8,7 +8,7 @@ import copy
 from datetime import datetime
 from pathlib import Path
 
-invokePyVersion = 0.1
+invokePyVersion = '0.1'
 
 invokeSpec = {}
 currentConfigPath = os.path.curdir
@@ -29,6 +29,8 @@ def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory = None):
         benchSpec['stderr'] = source['stderr'] if os.path.isabs(source['stderr']) else os.path.abspath(benchSpec['dir'] + '/' + source['stderr'])
     if isinstance(source['environment'], dict):
         benchSpec['environment'] = source['environment'] if benchSpec['environment'] is None else {**benchSpec['environment'], **source['environment']}
+    if isinstance(source['disabled'], bool):
+        benchSpec['disabled'] = source['disabled']
 
     for k in ['params', 'precmd', 'postcmd']:
         if isinstance(source[k], str):
@@ -138,7 +140,7 @@ for config in args.config:
     if not os.path.exists(config):
         if args.force:
             if args.verbose:
-                print(f"WARNING: could not find invoke specification {config}")
+                print(f"WARNING: could not find invoke specification {config}", file=sys.stderr)
             continue
         raise Exception(f'Invoke specification {args.config} not found!')
     currentConfigPath = os.path.dirname(config)
@@ -159,13 +161,13 @@ if invokeSpec['specs'] is not None:
         if spec['benchmarks'] is not None:
             benchmarksAvailable = benchmarksAvailable or len(spec['benchmarks']) > 0
             for b in spec['benchmarks']:
-                ensureDictionaryKeys(spec['benchmarks'][b], ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'input'])
+                ensureDictionaryKeys(spec['benchmarks'][b], ['disabled', 'dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'input'])
                 if spec['benchmarks'][b]['inputs'] is not None:
                     for i in spec['benchmarks'][b]['inputs']:
-                        ensureDictionaryKeys(spec['benchmarks'][b]['inputs'][i], ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'workloads'])
+                        ensureDictionaryKeys(spec['benchmarks'][b]['inputs'][i], ['disabled', 'dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment', 'workloads'])
                         if spec['benchmarks'][b]['inputs'][i]['workloads'] is not None:
                             for w in spec['benchmarks'][b]['inputs'][i]['workloads']:
-                                ensureDictionaryKeys(w, ['dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment'])
+                                ensureDictionaryKeys(w, ['disabled', 'dir', 'exec', 'params', 'precmd', 'postcmd', 'stdout', 'stderr', 'environment'])
 
 if invokeSpec['variables'] is None:
     invokeSpec['variables'] = {}
@@ -182,7 +184,8 @@ if args.list_benchmarks:
     else:
         for spec in invokeSpec['specs']:
             for b in spec['benchmarks']:
-                print(b)
+                if not spec['benchmarks'][b]['disabled'] or args.force:
+                    print(b)
     exit(0)
 
 if args.list_suites:
@@ -201,7 +204,7 @@ if args.specs:
     else:
         for spec in invokeSpec['specs']:
             for b in spec['benchmarks']:
-                print(f"{b:24s} {', '.join(spec['benchmarks'][b]['inputs'].keys())}")
+                print(f"{b:24s} {', '.join(spec['benchmarks'][b]['inputs'].keys())}{' (disabled)' if spec['benchmarks'][b]['disabled'] else ''}")
     print('')
     print(f"{'Suite':24s} {'Benchmarks'}")
     print('---')
@@ -341,8 +344,8 @@ for benchmark in args.benchmarks:
     for specIndex, spec in enumerate(invokeSpec['specs']):
         if benchmark not in spec['benchmarks']:
             continue
-        benchmarkFound = True
 
+        benchmarkFound = True
         subEnvironment = {}
 
         benchSpecL0 = {
@@ -353,7 +356,8 @@ for benchmark in args.benchmarks:
             'postcmd' : spec['postcmd'],
             'stdout' : spec['stdout'],
             'stderr' : spec['stderr'],
-            'environment': {}
+            'environment': {},
+            'disabled': False,
         }
 
         if isinstance(spec['environment'], dict):
@@ -383,7 +387,7 @@ for benchmark in args.benchmarks:
             if spec['input'] is None:
                 if args.force:
                     if args.verbose:
-                        print(f'WARNING: specification {specIndex} odes not provide a default input, skipping.')
+                        print(f'WARNING: specification {specIndex} odes not provide a default input, skipping.', file=sys.stderr)
                     continue
                 raise Exception(f"Specficiation {specIndex} does not have a default input, please specify one!")
             useInputs = spec['input'] if isinstance(spec['input'], list) else [spec['input']]
@@ -411,10 +415,18 @@ for benchmark in args.benchmarks:
 
                 # the %now% variable is replaced by the datetime, if compiling its resolved through the shell
 
+                if benchSpec['disabled']:
+                    if args.force:
+                        print(f"WARNING: ignore disabled flag for benchmark '{benchmark}'", file=sys.stderr)
+                    else:
+                        if args.verbose:
+                            print(f"Ignore disabled benchmark '{benchmark}'")
+                        continue
+
                 if benchSpec['exec'] is None:
                     if args.force:
                         if args.verbose:
-                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because no executable was defined")
+                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because no executable was defined", file=sys.stderr)
                         continue
                     raise Exception(f"No executable defined for benchmark '{benchmark}'")
 
@@ -451,7 +463,7 @@ for benchmark in args.benchmarks:
                 if not os.path.exists(benchSpec['exec']):
                     if args.force:
                         if args.verbose:
-                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because executable '{benchSpec['exec']}' was not found")
+                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because executable '{benchSpec['exec']}' was not found", file=sys.stderr)
                         continue
                     raise Exception(f"Could not find executable '{benchSpec['exec']}'")
 
@@ -474,7 +486,7 @@ for benchmark in args.benchmarks:
                     if sDate == '${NOW}':
                         shellScript +='NOW="$(date +\'%Y-%m-%d_%H%M%S\')"\n'
 
-                if args.verbose:
+                if args.verbose and not args.prepare:
                     print(f"Executing benchmark '{benchmark}', input '{input}', workload {workload}")
 
                 if not os.path.exists(benchSpec['dir'] + '/' + execName):
@@ -491,8 +503,9 @@ for benchmark in args.benchmarks:
                     print(f"WARNING: target executable '{benchSpec['dir'] + '/' + execName}' differs from specified executable '{benchSpec['exec']}'", file=sys.stderr)
 
 
-                invokeCmd = defaultInvoke + './' + execName + ' ' + benchSpec['params']
-
+                invokeCmd = defaultInvoke + './' + execName
+                if len(benchSpec['params']) > 0:
+                    invokeCmd += ' ' + benchSpec['params']
 
                 benchSpec['environment'] = {**benchSpec['environment'], **globalVarEnvironment}
 
@@ -602,12 +615,17 @@ for benchmark in args.benchmarks:
                         if ret != 0:
                             if args.verbose:
                                 print(f"Execution failed with return code {ret}")
-                            failedInvokes.append(f"{benchmark}-precmd")
+                            failedInvokes.append(f"{benchmark}-{input}-{workload}-precmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['precmd']}\n"
 
                 if not args.prepare and args.verbose:
                     print(f"Invoke command line '{invokeCmd}'")
+                    if not args.compile and not args.simulate:
+                        if benchSpec['stdout'] is not None:
+                            print(f"Redirect stdout to {benchSpec['stdout'].name}")
+                        if benchSpec['stderr'] is not None:
+                            print(f"Redirect stderr to {benchSpec['stderr'].name}")
                 if args.simulate:
                     print(f"{benchSpec['dir']}:$ {invokeCmd}")
                 elif not args.prepare and not args.compile:
@@ -615,13 +633,13 @@ for benchmark in args.benchmarks:
                     if ret != 0:
                         if args.verbose:
                             print(f"Execution failed with return code {ret}")
-                        failedInvokes.append(f"{benchmark}")
+                        failedInvokes.append(f"{benchmark}-{input}-{workload}")
                 if args.compile:
                     shellScript += f"  {invokeCmd}\n"
 
                 if not args.prepare and isinstance(benchSpec['postcmd'], str):
                     if args.verbose:
-                        print(f"Executing post invoke command {benchSpec['postcmd']}")
+                        print(f"Executing post invoke command '{benchSpec['postcmd']}'")
                     if args.simulate:
                         print(f"{benchSpec['dir']}:$ {benchSpec['postcmd']}")
                     elif not args.compile:
@@ -629,7 +647,7 @@ for benchmark in args.benchmarks:
                         if ret != 0:
                             if args.verbose:
                                 print(f"Execution failed with return code {ret}")
-                            failedInvokes.append(f"{benchmark}-postcmd")
+                            failedInvokes.append(f"{benchmark}-{input}-{workload}-postcmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['postcmd']}\n"
 

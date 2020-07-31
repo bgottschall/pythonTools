@@ -469,15 +469,9 @@ for benchmark in args.benchmarks:
                 benchSpec['dir'] = batchReplace(benchSpec['dir'], replaceVars)
                 benchSpec['exec'] = batchReplace(benchSpec['exec'], replaceVars)
 
-                if not os.path.exists(benchSpec['exec']):
-                    if args.force:
-                        if args.verbose:
-                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because executable '{benchSpec['exec']}' was not found", file=sys.stderr)
-                        continue
-                    raise Exception(f"Could not find executable '{benchSpec['exec']}'")
+                execName = os.path.basename(benchSpec['exec'])
 
                 benchSpec['exec'] = os.path.abspath(benchSpec['exec'])
-                execName = os.path.basename(benchSpec['exec'])
                 if not os.path.isdir(benchSpec['dir']):
                     if args.verbose:
                         print(f"Creating directory '{benchSpec['dir']}'")
@@ -485,6 +479,21 @@ for benchmark in args.benchmarks:
                         print(f"/:$ mkdir -p {benchSpec['dir']}")
                     else:
                         Path(benchSpec['dir']).mkdir(parents=True, exist_ok=True)
+
+
+                # Executable is not where it is supposed to be, but one is available in the input directory
+                if not os.path.exists(benchSpec['exec']) and os.path.exists(benchSpec['dir'] + '/' + execName):
+                    if args.verbose:
+                        print(f"WARNING: couldn't find {benchSpec['exec']}, will use {benchSpec['dir'] + '/' + execName} instead", file=sys.stderr)
+                    benchSpec['exec'] = benchSpec['dir'] + '/' + execName
+
+                if not os.path.exists(benchSpec['exec']):
+                    if args.force:
+                        if args.verbose:
+                            print(f"WARNING: ignored workload {workload} of '{benchmark}' because executable '{benchSpec['exec']}' was not found", file=sys.stderr)
+                        continue
+                    raise Exception(f"Could not find executable '{benchSpec['exec']}'")
+
 
 
                 benchSpec['dir'] = os.path.abspath(benchSpec['dir'])

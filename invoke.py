@@ -177,17 +177,6 @@ if len(args.variable) > 0:
         vsplit = v.split('=')
         invokeSpec['variables'][vsplit[0]] = '='.join(vsplit[1:])
 
-
-if args.list_benchmarks:
-    if not benchmarksAvailable or invokeSpec['specs'] is None:
-        print('No benchmarks specified')
-    else:
-        for spec in invokeSpec['specs']:
-            for b in spec['benchmarks']:
-                if not spec['benchmarks'][b]['disabled'] or args.force:
-                    print(b)
-    exit(0)
-
 if args.list_suites:
     if invokeSpec['suites'] is None or len(invokeSpec['suites']) == 0:
         print('No suites specified!')
@@ -195,6 +184,26 @@ if args.list_suites:
         for s in invokeSpec['suites']:
             print(s)
     exit(0)
+
+if args.list_benchmarks:
+    if not benchmarksAvailable or invokeSpec['specs'] is None:
+        print('No benchmarks specified')
+    else:
+        if len(args.suite) > 0:
+            for s in args.suite:
+                if s not in invokeSpec['suites']:
+                    raise Exception(f"Suite '{s}' not found")
+                for b in invokeSpec['suites'][s]['benchmarks']:
+                    for spec in invokeSpec['specs']:
+                        if b in spec['benchmarks'] and (not spec['benchmarks'][b]['disabled'] or args.force):
+                            print(b)
+        else:
+            for spec in invokeSpec['specs']:
+                for b in spec['benchmarks']:
+                    if not spec['benchmarks'][b]['disabled'] or args.force:
+                        print(b)
+    exit(0)
+
 
 if args.specs:
     print(f"{'Benchmark':24s} {'Inputs'}")
@@ -322,7 +331,7 @@ if args.simulate and len(globalEnvironment) > 0:
 for d in ['outdir', 'output']:
     if d in invokeSpec['variables']:
         if os.path.isabs(invokeSpec['variables'][d]) and not os.path.exists(invokeSpec['variables'][d]):
-            if args.prepate or (not args.compile and not args.simulate):
+            if args.prepare or (not args.compile and not args.simulate):
                 try:
                     Path(invokeSpec['variables'][d]).mkdir(parents=True, exist_ok=True)
                 except Exception:

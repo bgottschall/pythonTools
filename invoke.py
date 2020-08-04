@@ -5,6 +5,7 @@ import os
 import sys
 import subprocess
 import copy
+import json
 from datetime import datetime
 from pathlib import Path
 
@@ -129,10 +130,10 @@ if args.compile:
 
 
 if len(args.config) == 0:
-    if os.path.exists(os.path.curdir + '/' + 'invoke.spec.py'):
-        args.config = [os.path.curdir + '/' + 'invoke.spec.py'];
-    elif os.path.exists(os.path.dirname(__file__) + '/' + 'invoke.spec.py'):
-        args.config = [os.path.dirname(__file__) + '/' + 'invoke.spec.py'];
+    if os.path.exists(os.path.curdir + '/' + 'invoke.spec.json'):
+        args.config = [os.path.curdir + '/' + 'invoke.spec.json'];
+    elif os.path.exists(os.path.dirname(__file__) + '/' + 'invoke.spec.json'):
+        args.config = [os.path.dirname(__file__) + '/' + 'invoke.spec.json'];
     else:
         raise Exception(f'Could not find any invoke specification files!')
 
@@ -144,7 +145,11 @@ for config in args.config:
             continue
         raise Exception(f'Invoke specification {args.config} not found!')
     currentConfigPath = os.path.dirname(config)
-    exec(open(config).read())
+    try:
+        loadSpecification(json.load(open(config)))
+    except Exception:
+        print(f"Could not parse configuration file {config}", file=sys.stderr)
+        raise
 
 
 

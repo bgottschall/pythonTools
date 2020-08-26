@@ -628,17 +628,18 @@ for benchmark in args.benchmarks:
                 if args.verbose and len(benchSpec['environment']) > 0:
                     print(f"Setting environment to {benchSpec['environment']}")
 
-                if not args.prepare and isinstance(benchSpec['precmd'], str):
-                    if args.verbose:
-                        print(f"Executing pre invoke command '{benchSpec['precmd']}'")
-                    if args.simulate:
-                        print(f"{benchSpec['dir']}:$ {benchSpec['precmd']}")
-                    elif not args.prepare and not args.compile:
-                        ret = subprocess.call(benchSpec['precmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
-                        if ret != 0:
-                            if args.verbose:
-                                print(f"Execution failed with return code {ret}")
-                            failedInvokes.append(f"{benchmark}-{input}-{workload}-precmd")
+                if isinstance(benchSpec['precmd'], str):
+                    if not args.prepare:
+                        if args.verbose:
+                            print(f"Executing pre invoke command '{benchSpec['precmd']}'")
+                        if args.simulate:
+                            print(f"{benchSpec['dir']}:$ {benchSpec['precmd']}")
+                        elif not args.prepare and not args.compile:
+                            ret = subprocess.call(benchSpec['precmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
+                            if ret != 0:
+                                if args.verbose:
+                                    print(f"Execution failed with return code {ret}")
+                                failedInvokes.append(f"{benchmark}-{input}-{workload}-precmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['precmd']}\n"
 
@@ -660,17 +661,18 @@ for benchmark in args.benchmarks:
                 if args.compile:
                     shellScript += f"  {invokeCmd}\n"
 
-                if not args.prepare and isinstance(benchSpec['postcmd'], str):
-                    if args.verbose:
-                        print(f"Executing post invoke command '{benchSpec['postcmd']}'")
-                    if args.simulate:
-                        print(f"{benchSpec['dir']}:$ {benchSpec['postcmd']}")
-                    elif not args.compile:
-                        ret = subprocess.call(benchSpec['postcmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
-                        if ret != 0:
-                            if args.verbose:
-                                print(f"Execution failed with return code {ret}")
-                            failedInvokes.append(f"{benchmark}-{input}-{workload}-postcmd")
+                if isinstance(benchSpec['postcmd'], str):
+                    if not args.prepare:
+                        if args.verbose:
+                            print(f"Executing post invoke command '{benchSpec['postcmd']}'")
+                        if args.simulate:
+                            print(f"{benchSpec['dir']}:$ {benchSpec['postcmd']}")
+                        elif not args.compile:
+                            ret = subprocess.call(benchSpec['postcmd'], shell=True, cwd=benchSpec['dir'], env=invokeEnvironment)
+                            if ret != 0:
+                                if args.verbose:
+                                    print(f"Execution failed with return code {ret}")
+                                failedInvokes.append(f"{benchmark}-{input}-{workload}-postcmd")
                     if args.compile:
                         shellScript += f"  {benchSpec['postcmd']}\n"
 

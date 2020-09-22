@@ -613,6 +613,7 @@ for benchmark in args.benchmarks:
 
                 if args.compile:
                     shellScript += '(\n'
+                    shellScript += '  set -x\n'
                     shellScript += f"  cd \"{benchSpec['dir']}\"\n"
                     if len(benchSpec['environment']) > 0:
                         shellScript += '  export '

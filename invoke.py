@@ -44,9 +44,9 @@ def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory = None):
 
 def batchReplace(target, what: dict, wrapper = '%'):
     if isinstance(target, dict):
-        for x, y in target.items():
+        for x in target:
             for k, v in what.items():
-                target[x] = str(y).replace(wrapper + k + wrapper, v)
+                target[x] = str(target[x]).replace(wrapper + k + wrapper, v)
     elif isinstance(target, str):
         for k, v in what.items():
             target = target.replace(wrapper + k + wrapper, v);

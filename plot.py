@@ -1089,14 +1089,13 @@ fig.add_trace(go.Scatter(
     mode='{options.line_mode}',""")
                 if (_colours is not None):
                     plotScript.write(f"""
-    marker_color={_colours},
-    line_color='{_colours[0]}',""")
+    marker_color={_colours},""")
                 else:
                     plotScript.write(f"""
-{commentColour}    marker_color='{fillcolour.hex}',
-{commentColour}    line_color='{fillcolour.hex}',""")
+{commentColour}    marker_color='{fillcolour.hex}',""")
                 plotScript.write(f"""
-    fillcolor='rgba({fillcolour.red}, {fillcolour.green}, {fillcolour.blue}, 0.5)', # Currently not supported through script, using default
+{commentColour}    line_color='{fillcolour.hex}',
+{commentColour}    fillcolor='rgba({fillcolour.red}, {fillcolour.green}, {fillcolour.blue}, 0.5)', # Currently not supported through script, using default
     stackgroup='{'stackgroup-' + str(inputIndex) if options.line_stack else ''}',
     marker_symbol='{options.line_marker}',
     marker_size={options.line_marker_size},

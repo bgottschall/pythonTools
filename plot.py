@@ -208,6 +208,8 @@ parserFileOptions.add_argument("--normalise-icolumn", help="normalise after this
 parserFileOptions.add_argument("--normalise-column", help="normalise after this column (requires normalisation by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-irow", help="normalise after this row index (requires normalisation by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-row", help="normalise after this row (requires normalisation by 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-scale", help="scale normalised data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-offset", help="offset normalised data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--pickle-frames", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--file-frames", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
@@ -698,7 +700,8 @@ for input in args.input:
                     options.normalise_irow = lIndex.index(options.normalise_row)
                 if (options.normalise_irow >= frame.shape[0]):
                     raise Exception(f"Normalisation row is out of bounds in files {', '.join(input['value'])}")
-                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x / frame.iloc[options.normalise_irow, filterColumns], axis=1)
+                normRow = frame.iloc[options.normalise_irow, filterColumns].apply(pandas.to_numeric, errors='coerce')
+                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normRow) * options.normalise_scale) + options.normalise_offset , axis=1)
             elif options.normalise_to == 'column':
                 if options.normalise_icolumn is None and options.normalise_column is None:
                     options.normalise_icolumn = 0
@@ -709,13 +712,14 @@ for input in args.input:
                     options.normalise_icolumn = lColumns.index(options.normalise_column)
                 if (options.normalise_icolumn >= frame.shape[1]):
                     raise Exception(f"Normalisation column is out of bounds in files {', '.join(input['value'])}")
-                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x / frame.iloc[:, options.normalise_icolumn])
+                normColumn = frame.iloc[:, options.normalise_icolumn].apply(pandas.to_numeric, errors='coerce')
+                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normColumn) * options.normalise_scale) + options.normalise_offset, axis=0)
             else:
                 options.normalise_to = float(options.normalise_to)
                 if options.normalise_to == 0:
                     print("WARNING: cannot normalise data to 0!")
                 else:
-                    frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x.apply(lambda y: y/options.normalise_to))
+                    frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x.apply(lambda y: ((y / options.normalise_to) * options.normalise_scale) + options.normalise_offset))
 
         # Column Selection
         if len(options.ignore_icolumns) > 0:

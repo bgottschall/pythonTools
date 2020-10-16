@@ -203,6 +203,11 @@ parserFileOptions.add_argument("--sort-rows", help="sort rows (default %(default
 parserFileOptions.add_argument("--sort-rows-by", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sorting by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default='none', choices=Range(None, None, ['none', 'column', 'row']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-icolumn", help="normalise after this column index (requires normalisation by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-column", help="normalise after this column (requires normalisation by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-irow", help="normalise after this row index (requires normalisation by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-row", help="normalise after this row (requires normalisation by 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--pickle-frames", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--file-frames", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
@@ -623,7 +628,7 @@ for input in args.input:
     newMasterFrames = []
     for _index, (options, frame) in enumerate(masterFrames):
         if options.sort_columns != 'none':
-            if len(options.select_icolumns) > 0:
+            if len(options.select_columns) > 0 or len(options.select_icolumns) > 0:
                 if not args.quiet:
                     print("WARNING: --select-columns and --select-icolumns column order overrides --sort-columns!")
             else:
@@ -640,7 +645,7 @@ for input in args.input:
                             raise Exception(f"Sort row {options.sort_columns_row} not found in files {', '.join(input['value'])}")
                         options.sort_columns_irow = lIndex.index(options.sort_columns_row)
                     if (options.sort_columns_irow >= frame.shape[0]):
-                        raise Exception("Sort row is out of bounds in files {', '.join(input['value'])}")
+                        raise Exception(f"Sort row is out of bounds in files {', '.join(input['value'])}")
                     sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
                 else:
                     sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
@@ -651,6 +656,10 @@ for input in args.input:
                     options.index_icolumn = sortKey.get_loc(options.index_icolumn)
 
         if options.sort_rows != 'none':
+            if len(options.select_rows) > 0 or len(options.select_irows) > 0:
+                if not args.quiet:
+                    print("WARNING: --select-rows and --select-irows row order overrides --sort-rows!")
+            else:
                 sortKey = None
                 if options.sort_rows_by == 'column':
                     if options.sort_rows_icolumn is None and options.sort_rows_column is None:
@@ -661,7 +670,7 @@ for input in args.input:
                             raise Exception(f"Sort column {options.sort_rows_column} not found in files {', '.join(input['value'])}")
                         options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
                     if (options.sort_rows_icolumn >= frame.shape[1]):
-                        raise Exception("Sort column is out of bounds in files {', '.join(input['value'])}")
+                        raise Exception(f"Sort column is out of bounds in files {', '.join(input['value'])}")
                     # sortKey = frame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
                     sortKey = frame.iloc[:, options.sort_rows_icolumn]
                 else:
@@ -670,6 +679,43 @@ for input in args.input:
                         filterColumns[options.index_icolumn] = False
                     sortKey = getattr(frame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
                 frame = frame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
+
+        if options.normalise_to != 'none':
+            # Create a mask to exclude our index and special columns from normalisation
+            filterColumns = numpy.array([False if frame.columns[x] in options.specialColumns or (options.index_icolumn is not False and x == options.index_icolumn) else True for x in range(frame.shape[1])])
+            # Convert the data to numeric and set all values that are not numeric to NaN
+            frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(pandas.to_numeric, errors='coerce')
+            if options.normalise_to == 'row':
+                if options.normalise_irow is None and options.normalise_row is None:
+                    options.normalise_irow = 0
+                elif options.normalise_irow is None:
+                    if (options.index_icolumn is not None):
+                        lIndex = frame.iloc[:, options.index_icolumn].tolist()
+                    else:
+                        lIndex = frame.index.tolist()
+                    if (options.normalise_row not in lIndex):
+                        raise Exception(f"Normalisation row {options.normalise_row} not found in files {', '.join(input['value'])}")
+                    options.normalise_irow = lIndex.index(options.normalise_row)
+                if (options.normalise_irow >= frame.shape[0]):
+                    raise Exception(f"Normalisation row is out of bounds in files {', '.join(input['value'])}")
+                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x / frame.iloc[options.normalise_irow, filterColumns], axis=1)
+            elif options.normalise_to == 'column':
+                if options.normalise_icolumn is None and options.normalise_column is None:
+                    options.normalise_icolumn = 0
+                elif options.normalise_icolumn is None:
+                    lColumns = frame.columns.tolist()
+                    if (options.normalise_column not in lColumns):
+                        raise Exception(f"Normalisation column {options.normalise_column} not found in files {', '.join(input['value'])}")
+                    options.normalise_icolumn = lColumns.index(options.normalise_column)
+                if (options.normalise_icolumn >= frame.shape[1]):
+                    raise Exception(f"Normalisation column is out of bounds in files {', '.join(input['value'])}")
+                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x / frame.iloc[:, options.normalise_icolumn])
+            else:
+                options.normalise_to = float(options.normalise_to)
+                if options.normalise_to == 0:
+                    print("WARNING: cannot normalise data to 0!")
+                else:
+                    frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x.apply(lambda y: y/options.normalise_to))
 
         # Column Selection
         if len(options.ignore_icolumns) > 0:
@@ -784,7 +830,7 @@ for input in args.input:
                 elif len(options.ignore_icolumns) > 0:
                     options.ignore_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.ignore_icolumns]
         else:
-            frame = frame.reset_index(drop=True)
+            frame.reset_index(drop=True, inplace=True)
 
         if len(options.select_icolumns) > 0:
             newFrame = None

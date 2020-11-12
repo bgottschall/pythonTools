@@ -475,6 +475,7 @@ for benchmark in args.benchmarks:
 
                 execName = os.path.basename(benchSpec['exec'])
 
+
                 benchSpec['exec'] = os.path.abspath(benchSpec['exec'])
                 if not os.path.isdir(benchSpec['dir']):
                     if args.verbose:
@@ -530,6 +531,8 @@ for benchmark in args.benchmarks:
                     invokeCmd += ' ' + benchSpec['params']
 
                 benchSpec['environment'] = {**benchSpec['environment'], **globalVarEnvironment}
+
+                replaceVars = {**replaceVars, **{'dir': benchSpec['dir'], 'exec': execName}}
 
                 # Postprocess the invoke cmd lines after variables
                 invokeCmd = batchReplace(invokeCmd, replaceVars)

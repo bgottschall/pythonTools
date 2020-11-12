@@ -176,7 +176,7 @@ parserFileOptions = parser.add_argument_group('file parsing options')
 
 inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
 # Per File Parsing Arguments
-parserFileOptions.add_argument("--special-column-start", help="ignores lines starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--special-column-start", help="special columns (or ignore columns) starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -186,7 +186,7 @@ parserFileOptions.add_argument("--no-index", help="do not use a index column", d
 parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-icolumn", help="split data along column index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--split-column", help="split datas along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-column", help="split data along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)

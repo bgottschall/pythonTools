@@ -463,8 +463,7 @@ for benchmark in args.benchmarks:
                     else:
                         benchSpec['stderr'] = os.path.abspath(os.path.curdir + '/' + args.stderr)
 
-
-                if args.compile and '%now%' in str(benchSpec):
+                if args.compile and ('%now%' in str(benchSpec)) or ('%now%' in defaultInvoke):
                     sDate = '${NOW}'
                 else:
                     sDate = datetime.now().strftime("%Y-%m-%d_%H%M%S")

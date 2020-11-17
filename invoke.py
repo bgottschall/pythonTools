@@ -490,8 +490,6 @@ for benchmark in args.benchmarks:
 
                 benchSpec['dir'] = os.path.relpath(benchSpec['dir'], os.path.curdir)
 
-
-
                 if args.compile:
                     shellScript += f"# Execute workload {workload} of the '{input}' input of benchmark '{benchmark}'\n"
                     if sDate == '${NOW}':
@@ -504,11 +502,11 @@ for benchmark in args.benchmarks:
                     if args.verbose:
                         print(f"Symlinking '{benchSpec['exec']}' to '{benchSpec['dir'] + '/' + execName}'")
                     if args.simulate:
-                        print(f"/:$ ln -s {benchSpec['exec']} {benchSpec['dir'] + '/' + execName}")
+                        print(f"/:$ ln -s {os.path.relpath(benchSpec['exec'], benchSpec['dir'])} {benchSpec['dir'] + '/' + execName}")
                     elif args.prepare or not args.compile:
-                        os.symlink(benchSpec['exec'], benchSpec['dir'] + '/' + execName)
+                        os.symlink(os.path.relpath(benchSpec['exec'], benchSpec['dir']), benchSpec['dir'] + '/' + execName)
                     else:
-                        shellScript += f"ln -s {benchSpec['exec']} {benchSpec['dir'] + '/' + execName}\n"
+                        shellScript += f"ln -s {os.path.relpath(benchSpec['exec'], benchSpec['dir'])} {benchSpec['dir'] + '/' + execName}\n"
                     symlinked = True
                 elif os.path.realpath(benchSpec['exec']) != os.path.realpath(benchSpec['dir'] + '/' + execName):
                     print(f"WARNING: target executable '{benchSpec['dir'] + '/' + execName}' differs from specified executable '{benchSpec['exec']}'", file=sys.stderr)
@@ -555,7 +553,7 @@ for benchmark in args.benchmarks:
                     if args.compile or args.simulate:
                         invokeCmd += f" >>{benchSpec['stdout']}"
                     else:
-                        benchSpec['stdout'] = open(benchSpec['stdout'], 'a')
+                        benchSpec['stdout'] = open(benchSpec['stdout'] if os.path.isabs(benchSpec['stdout']) else benchSpec['dir'] + '/' + benchSpec['stdout'], 'a')
 
 
                 if benchSpec['stderr'] is not None:
@@ -563,7 +561,7 @@ for benchmark in args.benchmarks:
                     if args.compile or args.simulate:
                         invokeCmd += f" 2>>{benchSpec['stderr']}"
                     else:
-                        benchSpec['stderr'] = open(benchSpec['stderr'], 'a')
+                        benchSpec['stderr'] = open(benchSpec['stderr'] if os.path.isabs(benchSpec['stderr']) else benchSpec['dir'] + '/' + benchSpec['stderr'], 'a')
 
                 if args.compile:
                     shellScript += '(\n'

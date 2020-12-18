@@ -1030,7 +1030,7 @@ def getValidOrca(orcas=['orca']):
     for orca in norcas:
         fBin = shutil.which(orca)
         if fBin is not None:
-            fRun = subprocess.run([orca, '--help'], stdout=subprocess.PIPE)
+            fRun = subprocess.run([orca, '--help'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
             if fRun.returncode == 0 and "Plotly's image-exporting utilities" in fRun.stdout.decode():
                 return fBin
 

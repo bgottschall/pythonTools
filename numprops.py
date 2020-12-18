@@ -28,7 +28,7 @@ def numbersFromStdIn():
 # % in property name is taken as argument
 
 props = {
-    'count':      {'label': 'Count',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)    },
+    'count':      {'label': 'Count',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)},
     'sum':        {'label': 'Sum',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.sum(l1)},
     'min':        {'label': 'Min',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.min(l1)},
     'max':        {'label': 'Max',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.max(l1)},
@@ -47,8 +47,8 @@ props = {
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
 
 parser = ArgumentParser(description="output number properties from numbers passed or read from stdin")
-parser.add_argument("--stdin", help=f"read from stdin even if numbers are provided", default=False, action="store_true")
-parser.add_argument("--precision", help=f"force a specific precision", type=int, default=None)
+parser.add_argument("--stdin", help="read from stdin even if numbers are provided", default=False, action="store_true")
+parser.add_argument("--precision", help="force a specific precision", type=int, default=None)
 parser.add_argument("-p", "--properties", help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", type=str.lower, nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
 parser.add_argument("--secondary", help="secondary number set used e.g. to calculate p-value statistics", default=[], nargs='*')
@@ -72,7 +72,7 @@ else:
     l1 = numpy.array([float(x) for x in args.primary if isFloat(x)])
 
 if len(l1) == 0:
-    raise Exception(f"Could not parse any numbers")
+    raise Exception("Could not parse any numbers")
 
 if args.debug:
     print(f'[DEBUG][L1] {l1}')

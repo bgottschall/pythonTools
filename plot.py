@@ -29,7 +29,6 @@ import os
 import re
 import colour
 import subprocess
-import shutil
 import statistics
 import bz2
 import sys
@@ -169,7 +168,7 @@ considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
 specialColumns = ['error', 'offset', 'label', 'colour']
 
-parser = argparse.ArgumentParser(description="Visualize data")
+parser = argparse.ArgumentParser(description="Visualize your data the easy way")
 # Global Arguments
 
 parserFileOptions = parser.add_argument_group('file parsing options')
@@ -345,7 +344,7 @@ parserPlotGlobalOptions.add_argument("--width", help="plot width", type=int, def
 parserPlotGlobalOptions.add_argument("--height", help="plot height", type=int)
 
 parserOutputOptions = parser.add_argument_group('output options')
-parserOutputOptions.add_argument("--orca", help="plotly-orca binary required to output every format except html (https://github.com/plotly/orca)", type=str, default=None)
+parserOutputOptions.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parserOutputOptions.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
 parserOutputOptions.add_argument("--print", help="print plotting information and data", default=False, action="store_true")
 parserOutputOptions.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
@@ -354,7 +353,7 @@ parserOutputOptions.add_argument("-q", "--quiet", action="store_true", help="no 
 
 args = parser.parse_args()
 
-commentColour=''
+commentColour = ''
 
 if args.theme == 'gradient':
     args.theme = 'plotly_white'
@@ -381,10 +380,9 @@ for input in args.input:
     options.ignore_columns = list(set(options.ignore_columns))
     options.specialColumns = [options.special_column_start + x for x in specialColumns]
 
-    if (options.opacity == 'auto' and
-        ((options.plot == 'box' and 'overlay' in args.box_mode) or
-         (options.plot == 'violin' and 'overlay' in args.violin_mode) or
-         (options.plot == 'bar' and 'overlay' in args.bar_mode))):
+    if (options.opacity == 'auto' and ((options.plot == 'box' and 'overlay' in args.box_mode) or
+                                       (options.plot == 'violin' and 'overlay' in args.violin_mode) or
+                                       (options.plot == 'bar' and 'overlay' in args.bar_mode))):
         options.opacity = 0.8
     elif options.opacity == 'auto':
         options.opacity = 1.0
@@ -411,7 +409,7 @@ for input in args.input:
     options.bar_shift = None if options.bar_shift == 'auto' else float(options.bar_shift)
     options.y_tickangle = None if options.y_tickangle == 'auto' else float(options.y_tickangle)
     options.x_tickangle = None if options.x_tickangle == 'auto' else float(options.x_tickangle)
-   
+
 args.bar_gap = None if args.bar_gap == 'auto' else float(args.bar_gap)
 args.master_title = f"'{args.master_title}'" if args.master_title is not None else None
 args.y_master_title = f"'{args.y_master_title}'" if args.y_master_title is not None else None
@@ -582,7 +580,6 @@ for input in args.input:
             if (not options.no_columns):
                 frame.columns = fData[0]
 
-
             masterFrames.append((options, frame))
 
     for _index, (options, frame) in enumerate(masterFrames):
@@ -621,7 +618,7 @@ for input in args.input:
             joinedFrame.index.name = newIndex
             joinedFrame.reset_index(inplace=True)
             revisedOptions.index_icolumn = 0
-           
+
         # Working still with a temporary index, drop after joining
         joinedFrame.reset_index(drop=True, inplace=True)
 
@@ -701,7 +698,7 @@ for input in args.input:
                 if (options.normalise_irow >= frame.shape[0]):
                     raise Exception(f"Normalisation row is out of bounds in files {', '.join(input['value'])}")
                 normRow = frame.iloc[options.normalise_irow, filterColumns].apply(pandas.to_numeric, errors='coerce')
-                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normRow) * options.normalise_scale) + options.normalise_offset , axis=1)
+                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normRow) * options.normalise_scale) + options.normalise_offset, axis=1)
             elif options.normalise_to == 'column':
                 if options.normalise_icolumn is None and options.normalise_column is None:
                     options.normalise_icolumn = 0
@@ -875,13 +872,16 @@ for input in args.input:
     if (inputOptions.row not in subplotGridDefinition):
         subplotGridDefinition[inputOptions.row] = {}
     if (inputOptions.col not in subplotGridDefinition[inputOptions.row]):
-        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary, 'title': inputOptions.title}
+        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary, 'title': inputOptions.title, 'traces': 0}
 
     subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'] = max(inputOptions.rowspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'] = max(inputOptions.colspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y'] = inputOptions.y_secondary or subplotGridDefinition[inputOptions.row][inputOptions.col]['secondary_y']
     if inputOptions.title is not None:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['title'] = inputOptions.title
+
+    options.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += 1
 
     if (args.print):
         doneSomething = True
@@ -975,6 +975,10 @@ import plotly
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+import urllib.request
+import glob
+import re
+
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", default='{args.font_colour.hex}')
@@ -990,20 +994,45 @@ args = parser.parse_args()
 
 if len(args.output) == 0:
     args.browser = True
+
+plotPyMaster = "{os.path.realpath(__file__)}"
+plotPyMasterDir = "{os.path.dirname(os.path.realpath(__file__))}"
 """)
 
 plotScript.write("""
 
+def getLatestPlotlyOrca(destination=".", quiet=False):
+    fetchUrl = "https://github.com/plotly/orca/releases/latest"
+    if not quiet:
+        print(f"Fetching latest plotly orca release from {fetchUrl}", file=sys.stderr)
+    lastReleases = urllib.request.urlopen(fetchUrl).read().decode()
+    appImage = re.search(r'a href="(.+\.AppImage)"', lastReleases)
+    if not appImage:
+        raise Exception('Could not locate latest plotly orca AppImage release at {fetchUrl}')
+    fileAppImage = os.path.realpath(destination) + '/' + os.path.basename(appImage.group(1))
+    urlAppImage = "https://github.com" + appImage.group(1)
+    if not quiet:
+        print(f"Downloading {urlAppImage} to {fileAppImage}", file=sys.stderr)
+    urllib.request.urlretrieve(urlAppImage, fileAppImage)
+    os.chmod(fileAppImage, 0o755)
+    return fileAppImage
 
-def checkOrca(orca = 'orca'):
-    if orca is not None:
-        orca = shutil.which(orca)
-    if orca is None:
-        raise Exception('Could not find plotly orca please provide it via --orca (https://github.com/plotly/orca)')
-    orcaOutput = subprocess.run([orca, '--help'], stdout=subprocess.PIPE, check=True)
-    if 'Plotly\\'s image-exporting utilities' not in orcaOutput.stdout.decode():
-       raise Exception(f'Invalid orca version {orca}. Please provide the correct version via --orca (https://github.com/plotly/orca)')
-    return orca
+
+def getValidOrca(orcas=['orca']):
+    if not isinstance(orcas, list):
+        orcas = [orcas]
+    norcas = []
+    for orca in orcas:
+        if '*' in orca:
+            norcas += glob.glob(orca)
+        else:
+            norcas.append(orca)
+    for orca in norcas:
+        fBin = shutil.which(orca)
+        if fBin is not None:
+            fRun = subprocess.run([orca, '--help'], stdout=subprocess.PIPE)
+            if fRun.returncode == 0 and "Plotly's image-exporting utilities" in fRun.stdout.decode():
+                return fBin
 
 
 def exportFigure(fig, width, height, exportFile, orca = 'orca'):
@@ -1020,7 +1049,7 @@ def exportFigure(fig, width, height, exportFile, orca = 'orca'):
             fileExtension = fileExtension.lstrip('.')
 
             go.Figure(fig).write_json(tmpFile)
-            cmd = [orca, 'graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension, '--mathjax', 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/MathJax.js']
+            cmd = [orca, 'graph', tmpFile, '--output-dir', exportDir, '--output', exportFilename, '--format', fileExtension]
             if width is not None:
                 cmd.extend(['--width', f'{width}'])
             if height is not None:
@@ -1205,6 +1234,7 @@ fig.add_trace(go.Bar(
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
+    offsetgroup={options.subplotTraceIndex + 1 if args.bar_mode == 'group' else None},
     y={ydata},
     x={xdata},""")
                 if (_labels is not None):
@@ -1349,13 +1379,13 @@ plotScript.write(f"fig.update_layout(title={args.master_title})\n")
 plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}', boxmode='{args.box_mode}', violinmode='{args.violin_mode}')\n")
 plotScript.write(f"fig.update_layout(bargap={args.bar_gap}, bargroupgap={args.bar_group_gap}, boxgap={args.box_gap}, boxgroupgap={args.box_group_gap}, violingap={args.violin_gap}, violingroupgap={args.violin_group_gap})\n")
 
-plotScript.write(f"\n# Layout Legend\n")
+plotScript.write("\n# Layout Legend\n")
 plotScript.write(f"fig.update_layout(showlegend={args.legend_show})\n")
 plotScript.write(f"{'# ' if args.legend_y_anchor is None else ''}fig.update_layout(legend_yanchor='{'auto' if args.legend_y_anchor is None else args.legend_y_anchor}')\n")
 plotScript.write(f"{'# ' if args.legend_x_anchor is None else ''}fig.update_layout(legend_xanchor='{'auto' if args.legend_x_anchor is None else args.legend_x_anchor}')\n")
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}', bgcolor='rgba(255,255,255,0)'))\n")
 
-plotScript.write(f"\n# Layout Plot and Background\n")
+plotScript.write("\n# Layout Plot and Background\n")
 plotScript.write(f"{commentColour}fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plot_bgcolor='rgba(255, 255, 255, 0)')\n")
 
 args.margin_b = args.margin_b if args.margin_b is not None else args.margins if args.margins is not None else None if defaultBottomMargin else 0
@@ -1366,7 +1396,7 @@ args.margin_pad = args.margin_pad if args.margin_pad is not None else args.margi
 
 plotScript.write(f"fig.update_layout(margin=dict(t={args.margin_t}, l={args.margin_l}, r={args.margin_r}, b={args.margin_b}, pad={args.margin_pad}))\n")
 
-plotScript.write(f"\n# Plot Font\n")
+plotScript.write("\n# Plot Font\n")
 plotScript.write(f"""fig.update_layout(font=dict(
     family=args.font_family,
     size=args.font_size,
@@ -1379,28 +1409,32 @@ plotScript.write("""
 # Execute addon file if found
 filename, fileext = os.path.splitext(__file__)
 if (os.path.exists(f'{filename}_addon{fileext}')):
-    exec(open(f'{filename}_addon{fileext}').read())""")
-
-if args.orca is None:
-    orcaSearchPath = ['/opt/plotly-orca/orca', '/opt/plotly/orca', 'orca']
-    for executable in orcaSearchPath:
-        args.orca = shutil.which(executable)
-        if args.orca is not None:
-            break
-
-plotScript.write(f"""
+    exec(open(f'{filename}_addon{fileext}').read())
 
 if args.orca is None and os.getenv('PLOTLY_ORCA') is not None:
-    args.orca = os.getenv('PLOTLY_ORCA')""")
+    args.orca = os.getenv('PLOTLY_ORCA')
+""")
 
 if args.orca is not None:
     plotScript.write(f"""
-
 # An initial orca version is provided by the plot author
 if args.orca is None:
-    args.orca = '{args.orca}'""")
+    args.orca = '{args.orca}'
+""")
 
-plotScript.write(f"""
+plotScript.write("""
+if len(args.output) > 0 and not all([x.endswith('.html') for x in args.output]):
+    searchSpace = [args.orca] if args.orca is not None else []
+    if os.path.isdir(plotPyMasterDir):
+        searchSpace += [plotPyMasterDir + '/orca', plotPyMasterDir + '/orca*.AppImage']
+    searchSpace += ['orca*.AppImage', 'orca']
+    args.orca = getValidOrca(searchSpace)
+
+    if args.orca is None:
+        if args.quiet or not (input("Download latest plotly orca for output format support? [Y/n]: ").lower() in ['y', 'yes', '']):
+            print("Requested output format requires plotly orca, please provide it manually from https://github.com/plotly/orca!")
+            exit(0)
+        args.orca = getLatestPlotlyOrca(plotPyMasterDir if os.path.isdir(plotPyMasterDir) else ".")
 
 if args.browser:
     fig.show()
@@ -1414,15 +1448,14 @@ if len(args.output) > 0:
         if openWith is None:
             args.quiet = True
 
-    orca = checkOrca(args.orca);
     for output in args.output:
         exportFigure(fig, args.width, args.height, output, args.orca)
-        print(f'Saved to {{output}}')
+        print(f'Saved to {output}')
         if not args.quiet:
             try:
                 subprocess.check_call([openWith, output], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             except Exception:
-                print(f'Could not open {{output}}!')
+                print(f'Could not open {output}!')
 """)
 
 plotScript.close()

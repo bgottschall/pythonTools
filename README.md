@@ -16,16 +16,7 @@ PIP3 packages:
 pip3 install plotly numpy pandas colour
 ```
 
-Download the latest plotly-orca at https://github.com/plotly/orca/releases. Script will search for these executables by default:
-* /opt/plotly-orca/orca
-* /opt/plotly/orca
-* orca
-
-An executable defined with the environment variable `PLOTLY_ORCA` takes
-precedence. You can also define the orca binary as an argument to plot.py.
-
-**Plotly requires a special orca version which is incompatible with the
-original orca!**
+Plotly also requires a special orca version to export any other format than HTML. The plotly orca will be automatically downloaded up on first usage or can be retrieved from https://github.com/plotly/orca/releases/latest .
 
 ## Usage
 

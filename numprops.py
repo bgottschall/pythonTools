@@ -93,8 +93,9 @@ for p in args.properties:
     else:
         for cp in props:
             if props[cp]['argument']:
-                pattern = re.compile(re.escape(cp).replace('\%', '(.+)', 1))  # [-+]?\d*\.\d+|\d+)', 1))
+                pattern = re.compile(re.escape(cp).replace('%', '(.+)', 1))  # [-+]?\d*\.\d+|\d+)', 1))
                 reres = pattern.search(p)
+
                 if reres and len(reres.groups()) == 1:
                     arg = reres.group(1)
                     prop = cp

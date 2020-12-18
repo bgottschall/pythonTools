@@ -978,6 +978,7 @@ from plotly.subplots import make_subplots
 import urllib.request
 import glob
 import re
+import platform
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
@@ -1424,16 +1425,19 @@ if args.orca is None:
 
 plotScript.write("""
 if len(args.output) > 0 and not all([x.endswith('.html') for x in args.output]):
-    searchSpace = [args.orca] if args.orca is not None else []
-    if os.path.isdir(plotPyMasterDir):
-        searchSpace += [plotPyMasterDir + '/orca', plotPyMasterDir + '/orca*.AppImage']
-    searchSpace += ['orca*.AppImage', 'orca']
+    searchSpace = ([args.orca] if args.orca is not None else [])
+    searchSpace.extend(['orca', 'plotly-orca', plotPyMasterDir + '/orca*.AppImage'])
     args.orca = getValidOrca(searchSpace)
 
     if args.orca is None:
+        if platform.system() != 'Linux':
+            print("Automatic installation of plotly-orca not supported for your system! Please manually install plotly orca from https://github.com/plotly/orca and make it available in your environment.")
+            exit(0)
+
         if args.quiet or not (input("Download latest plotly orca for output format support? [Y/n]: ").lower() in ['y', 'yes', '']):
             print("Requested output format requires plotly orca, please provide it manually from https://github.com/plotly/orca!")
             exit(0)
+
         args.orca = getLatestPlotlyOrca(plotPyMasterDir if os.path.isdir(plotPyMasterDir) else ".")
 
 if args.browser:

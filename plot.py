@@ -1426,7 +1426,7 @@ if args.orca is None:
 plotScript.write("""
 if len(args.output) > 0 and not all([x.endswith('.html') for x in args.output]):
     searchSpace = ([args.orca] if args.orca is not None else [])
-    searchSpace.extend(['orca', 'plotly-orca', plotPyMasterDir + '/orca*.AppImage'])
+    searchSpace.extend(['orca', 'plotly-orca', plotPyMasterDir + '/orca*.AppImage', './orca*.AppImage'])
     args.orca = getValidOrca(searchSpace)
 
     if args.orca is None:

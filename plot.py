@@ -1013,10 +1013,10 @@ fig = make_subplots(
     horizontal_spacing={args.horizontal_spacing},
     specs=[""")
 for r in range(1, subplotGrid[1]['max'] + 1):
-    plotScript.write("\n    [")
+    plotScript.write("\n        [")
     for c in range(1, subplotGrid[0]['max'] + 1):
         if (r in subplotGridDefinition and c in subplotGridDefinition[r]):
-            plotScript.write(f"{{'rowspan': {subplotGridDefinition[r][c]['rowspan']}, 'colspan': {subplotGridDefinition[r][c]['colspan']}, 'secondary_y': {subplotGridDefinition[r][c]['secondary_y']}}},")
+            plotScript.write(f"{{'rowspan': {subplotGridDefinition[r][c]['rowspan']}, 'colspan': {subplotGridDefinition[r][c]['colspan']}, 'secondary_y': {subplotGridDefinition[r][c]['secondary_y']}}}, ")
             subplotTitles.append('' if subplotGridDefinition[r][c]['title'] is None else subplotGridDefinition[r][c]['title'])
         else:
             plotScript.write("None,")
@@ -1298,10 +1298,7 @@ fig.add_trace(go.Violin(
     plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, tickangle={options.x_tickangle}, col={options.col}, row={options.row})\n")
     plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, tickangle={options.y_tickangle}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-
-    plotScript.write("\n\n")
-
-plotScript.write("\n\n")
+    plotScript.write("\n")
 
 if (args.violin_mode == 'halfgroup'):
     args.violin_mode = 'group'
@@ -1362,6 +1359,7 @@ plotPyMaster = "{os.path.realpath(__file__)}"
 """)
 
 plotScript.write("""
+
 def getLatestPlotlyOrca(destination=".", quiet=False):
     fetchUrl = "https://github.com/plotly/orca/releases/latest"
     if not quiet:
@@ -1396,7 +1394,7 @@ def getValidOrca(orcas=['orca']):
                 return fBin
 
 
-def exportFigure(fig, width, height, exportFile, orca = 'orca'):
+def exportFigure(fig, width, height, exportFile, orca='orca'):
     if exportFile.lower().endswith('.html'):
         fig.write_html(exportFile)
         return

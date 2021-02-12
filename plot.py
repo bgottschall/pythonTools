@@ -35,6 +35,7 @@ import sys
 import pickle
 import copy
 import textwrap
+import shutil
 
 
 def isFloat(val):
@@ -348,7 +349,7 @@ parserOutputOptions.add_argument("--orca", help="path to plotly orca (https://gi
 parserOutputOptions.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
 parserOutputOptions.add_argument("--print", help="print plotting information and data", default=False, action="store_true")
 parserOutputOptions.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
-parserOutputOptions.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png,...)", default=[], nargs='+')
+parserOutputOptions.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png, py, ...)", default=[], nargs='+')
 parserOutputOptions.add_argument("-q", "--quiet", action="store_true", help="no warnings and don't open output file", default=False)
 
 args = parser.parse_args()
@@ -881,7 +882,7 @@ for input in args.input:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['title'] = inputOptions.title
 
     options.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
-    subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += 1
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
 
     if (args.print):
         doneSomething = True
@@ -906,6 +907,21 @@ for input in args.input:
             print(f'Dataframe saved to {options.pickle_frames}')
 
     data.append({'options': options, 'frames': [f for _, f in masterFrames]})
+
+
+# Separate python outputs from actual output put the first script
+# into args.script and all others into scriptOutputs, args.script is
+# out master all others are secondary
+secondaryScripts = []
+for x in args.output:
+    if x.lower().endswith('.py'):
+        if not args.script:
+            args.script = x
+        else:
+            secondaryScripts.append(x)
+
+# Remove scripts from output
+args.output = [x for x in args.output if not x.lower().endswith('.py')]
 
 
 if doneSomething and not args.browser and len(args.output) == 0 and not args.script:
@@ -987,9 +1003,9 @@ parser.add_argument("--font-family", help="font family (default %(default)s)", d
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
-parser.add_argument("--output", help="output file (html, png, jpeg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
+parser.add_argument("--output", "-o", help="output file (html, png, jpeg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
 parser.add_argument("--browser", help="open plot in browser", action="store_true")
-parser.add_argument("--quiet", help="no warnings and don't open output file", action="store_true")
+parser.add_argument("--quiet", "-q", help="no warnings and don't open output file", action="store_true")
 
 args = parser.parse_args()
 
@@ -1061,7 +1077,7 @@ for input in data:
             for nextColIndex in range(colIndex + 1, colIndex + 1 + specialColumnCount if colIndex + 1 + specialColumnCount <= len(frame.columns) else len(frame.columns)):
                 nextCol = str(frame.columns[nextColIndex])
                 if (nextCol not in options.specialColumns):
-                    continue
+                    break
                 if (nextCol == options.special_column_start + 'error') and (_errors is None):
                     _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
@@ -1168,7 +1184,7 @@ fig.add_trace(go.Bar(
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
-    offsetgroup={options.subplotTraceIndex + 1 if args.bar_mode == 'group' else None},
+    offsetgroup={options.subplotTraceIndex + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None},
     y={ydata},
     x={xdata},""")
                 if (_labels is not None):
@@ -1475,5 +1491,9 @@ if args.browser or len(args.output) > 0:
 if not args.script:
     os.close(plotFd)
     os.remove(plotScriptName)
-elif not args.quiet:
-    print(f"Plot script saved to {plotScriptName}")
+else:
+    for s in secondaryScripts:
+        shutil.copy(args.script, s)
+    if not args.quiet:
+        for s in [args.script] + secondaryScripts:
+            print(f"Script saved to {s}")

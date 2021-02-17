@@ -203,6 +203,8 @@ parserFileOptions.add_argument("--sort-rows", help="sort rows (default %(default
 parserFileOptions.add_argument("--sort-rows-by", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sorting by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default='none', choices=Range(None, None, ['none', 'column', 'row']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-icolumn", help="normalise after this column index (requires normalisation by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-column", help="normalise after this column (requires normalisation by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -843,6 +845,12 @@ for input in args.input:
         elif len(options.ignore_icolumns) > 0:
             filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(frame.shape[1])])
             frame = frame.loc[:, filterColumns]
+
+        if len(options.column_names) > 0:
+            frame.columns = (options.column_names + frame.columns.to_list()[len(options.column_names):])[:len(frame.columns)]
+        if len(options.row_names) > 0:
+            frame.index = (options.row_names + frame.index.to_list()[len(options.row_names):])[:len(frame.index)]
+
         inputOptions.traceCount += len([x for x in frame.columns if not str(x) in options.specialColumns])
         masterFrames[_index] = (options, frame)
         totalFrameCount += 1

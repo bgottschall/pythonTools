@@ -742,6 +742,8 @@ for input in args.input:
         if len(options.select_columns) > 0:
             selectedColumns = []
             for sc in options.select_columns:
+                if (isFloat(sc)):
+                    sc = float(sc)
                 for i, c in enumerate(frame.columns):
                     if (sc == c):
                         options.select_icolumns.append(i)
@@ -776,6 +778,8 @@ for input in args.input:
         if len(options.select_rows) > 0:
             selectedRows = []
             for sr in options.select_rows:
+                if (isFloat(sr)):
+                    sr = float(sr)
                 for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
                     if (sr == r):
                         options.select_irows.append(i)

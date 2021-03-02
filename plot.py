@@ -167,7 +167,7 @@ def updateRange(_range, dataList):
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
-specialColumns = ['error', 'offset', 'label', 'colour']
+specialColumns = ['error', 'error-', 'error+', 'offset', 'label', 'colour']
 
 parser = argparse.ArgumentParser(description="Visualize your data the easy way")
 # Global Arguments
@@ -188,6 +188,7 @@ parserFileOptions.add_argument("--index-column", help="set index column", defaul
 parserFileOptions.add_argument("--split-icolumn", help="split data along column index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-column", help="split data along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], sticky_default=False, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -205,6 +206,7 @@ parserFileOptions.add_argument("--sort-rows-icolumn", help="sort rows after this
 parserFileOptions.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--drop-none", help="dropping rows/columns that are completely empty", sticky_default=True, default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default='none', choices=Range(None, None, ['none', 'column', 'row']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-icolumn", help="normalise after this column index (requires normalisation by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-column", help="normalise after this column (requires normalisation by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -240,12 +242,12 @@ parserLinePlotOptions.add_argument('--line-fill', choices=['none', 'tozeroy', 't
 parserLinePlotOptions.add_argument('--line-stack', help='stack line input traces (default %(default)s)', default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserLinePlotOptions.add_argument('--line-shape', choices=['linear', 'spline', 'hv', 'vh', 'hvh', 'vhv'], help='choose line shape (default %(default)s)', default='linear', action=ChildAction, parent=inputFileArgument)
 parserLinePlotOptions.add_argument('--line-dash', choices=['solid', 'dot', 'dash', 'longdash', 'dashdot', 'longdashdot'], help='choose line dash (default %(default)s)', default='solid', action=ChildAction, parent=inputFileArgument)
-parserLinePlotOptions.add_argument('--line-marker', choices=['circle', 'circle-open', 'circle-dot', 'circle-open-dot', 'square', 'square-open', 'square-dot', 'square-open-dot', 'diamond', 'diamond-open', 'diamond-dot', 'diamond-open-dot', 'cross', 'cross-open', 'cross-dot', 'cross-open-dot', 'x', 'x-open', 'x-dot', 'x-open-dot', 'triangle-up', 'triangle-up-open', 'triangle-up-dot', 'triangle-up-open-dot', 'triangle-down', 'triangle-down-open', 'triangle-down-dot', 'triangle-down-open-dot', 'triangle-left', 'triangle-left-open', 'triangle-left-dot', 'triangle-left-open-dot', 'triangle-right', 'triangle-right-open', 'triangle-right-dot', 'triangle-right-open-dot', 'triangle-ne', 'triangle-ne-open', 'triangle-ne-dot', 'triangle-ne-open-dot', 'triangle-se', 'triangle-se-open', 'triangle-se-dot', 'triangle-se-open-dot', 'triangle-sw', 'triangle-sw-open', 'triangle-sw-dot', 'triangle-sw-open-dot', 'triangle-nw', 'triangle-nw-open', 'triangle-nw-dot', 'triangle-nw-open-dot', 'pentagon', 'pentagon-open', 'pentagon-dot', 'pentagon-open-dot', 'hexagon', 'hexagon-open', 'hexagon-dot', 'hexagon-open-dot', 'hexagon2', 'hexagon2-open', 'hexagon2-dot', 'hexagon2-open-dot', 'octagon', 'octagon-open', 'octagon-dot', 'octagon-open-dot', 'star', 'star-open', 'star-dot', 'star-open-dot', 'hexagram', 'hexagram-open', 'hexagram-dot', 'hexagram-open-dot', 'star-triangle-up', 'star-triangle-up-open', 'star-triangle-up-dot', 'star-triangle-up-open-dot', 'star-triangle-down', 'star-triangle-down-open', 'star-triangle-down-dot', 'star-triangle-down-open-dot', 'star-square', 'star-square-open', 'star-square-dot', 'star-square-open-dot', 'star-diamond', 'star-diamond-open', 'star-diamond-dot', 'star-diamond-open-dot', 'diamond-tall', 'diamond-tall-open', 'diamond-tall-dot', 'diamond-tall-open-dot', 'diamond-wide', 'diamond-wide-open', 'diamond-wide-dot', 'diamond-wide-open-dot', 'hourglass', 'hourglass-open', 'bowtie', 'bowtie-open', 'circle-cross', 'circle-cross-open', 'circle-x', 'circle-x-open', 'square-cross', 'square-cross-open', 'square-x', 'square-x-open', 'diamond-cross', 'diamond-cross-open', 'diamond-x', 'diamond-x-open', 'cross-thin', 'cross-thin-open', 'x-thin', 'x-thin-open', 'asterisk', 'asterisk-open', 'hash', 'hash-open', 'hash-dot', 'hash-open-dot', 'y-up', 'y-up-open', 'y-down', 'y-down-open', 'y-left', 'y-left-open', 'y-right', 'y-right-open', 'line-ew', 'line-ew-open', 'line-ns', 'line-ns-open', 'line-ne', 'line-ne-open', 'line-nw', 'line-nw-open'], help='choose line marker (default %(default)s)', default='circle', action=ChildAction, parent=inputFileArgument)
+parserLinePlotOptions.add_argument('--line-markers', choices=['circle', 'circle-open', 'circle-dot', 'circle-open-dot', 'square', 'square-open', 'square-dot', 'square-open-dot', 'diamond', 'diamond-open', 'diamond-dot', 'diamond-open-dot', 'cross', 'cross-open', 'cross-dot', 'cross-open-dot', 'x', 'x-open', 'x-dot', 'x-open-dot', 'triangle-up', 'triangle-up-open', 'triangle-up-dot', 'triangle-up-open-dot', 'triangle-down', 'triangle-down-open', 'triangle-down-dot', 'triangle-down-open-dot', 'triangle-left', 'triangle-left-open', 'triangle-left-dot', 'triangle-left-open-dot', 'triangle-right', 'triangle-right-open', 'triangle-right-dot', 'triangle-right-open-dot', 'triangle-ne', 'triangle-ne-open', 'triangle-ne-dot', 'triangle-ne-open-dot', 'triangle-se', 'triangle-se-open', 'triangle-se-dot', 'triangle-se-open-dot', 'triangle-sw', 'triangle-sw-open', 'triangle-sw-dot', 'triangle-sw-open-dot', 'triangle-nw', 'triangle-nw-open', 'triangle-nw-dot', 'triangle-nw-open-dot', 'pentagon', 'pentagon-open', 'pentagon-dot', 'pentagon-open-dot', 'hexagon', 'hexagon-open', 'hexagon-dot', 'hexagon-open-dot', 'hexagon2', 'hexagon2-open', 'hexagon2-dot', 'hexagon2-open-dot', 'octagon', 'octagon-open', 'octagon-dot', 'octagon-open-dot', 'star', 'star-open', 'star-dot', 'star-open-dot', 'hexagram', 'hexagram-open', 'hexagram-dot', 'hexagram-open-dot', 'star-triangle-up', 'star-triangle-up-open', 'star-triangle-up-dot', 'star-triangle-up-open-dot', 'star-triangle-down', 'star-triangle-down-open', 'star-triangle-down-dot', 'star-triangle-down-open-dot', 'star-square', 'star-square-open', 'star-square-dot', 'star-square-open-dot', 'star-diamond', 'star-diamond-open', 'star-diamond-dot', 'star-diamond-open-dot', 'diamond-tall', 'diamond-tall-open', 'diamond-tall-dot', 'diamond-tall-open-dot', 'diamond-wide', 'diamond-wide-open', 'diamond-wide-dot', 'diamond-wide-open-dot', 'hourglass', 'hourglass-open', 'bowtie', 'bowtie-open', 'circle-cross', 'circle-cross-open', 'circle-x', 'circle-x-open', 'square-cross', 'square-cross-open', 'square-x', 'square-x-open', 'diamond-cross', 'diamond-cross-open', 'diamond-x', 'diamond-x-open', 'cross-thin', 'cross-thin-open', 'x-thin', 'x-thin-open', 'asterisk', 'asterisk-open', 'hash', 'hash-open', 'hash-dot', 'hash-open-dot', 'y-up', 'y-up-open', 'y-down', 'y-down-open', 'y-left', 'y-left-open', 'y-right', 'y-right-open', 'line-ew', 'line-ew-open', 'line-ns', 'line-ns-open', 'line-ne', 'line-ne-open', 'line-nw', 'line-nw-open'], help='choose line marker (default circle)', default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserLinePlotOptions.add_argument('--line-marker-size', help='choose line marker size (default %(default)s)', type=int, default=6, choices=Range(0, None), action=ChildAction, parent=inputFileArgument)
 parserLinePlotOptions.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon (default %(default)s)", default='middle center', action=ChildAction, parent=inputFileArgument)
 
 parserBarPlotOptions = parser.add_argument_group('bar plot options')
-parserBarPlotOptions.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'overlay', 'relative'], default='group')
+parserBarPlotOptions.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'unique_group', 'overlay', 'relative'], default='group')
 parserBarPlotOptions.add_argument("--bar-width", help="set explicit bar width", choices=Range(0, None, ['auto']), default='auto', action=ChildAction, parent=inputFileArgument)
 parserBarPlotOptions.add_argument("--bar-shift", help="set bar shift", choices=Range(None, None, ['auto']), default='auto', action=ChildAction, parent=inputFileArgument)
 parserBarPlotOptions.add_argument("--bar-text-position", help="choose bar text position (default %(default)s)", choices=["inside", "outside", "auto", "none"], default='none', action=ChildAction, parent=inputFileArgument)
@@ -324,6 +326,7 @@ parserPlotGlobalOptions.add_argument("--horizontal-spacing", type=float, help="h
 parserPlotGlobalOptions.add_argument("--font-size", help="font size (default %(default)s)", type=int, default=12)
 parserPlotGlobalOptions.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 parserPlotGlobalOptions.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
+parserPlotGlobalOptions.add_argument("--background-colour", help="set background colour  (default 'rgba(255, 255, 255, 0)')", type=str, default=None)
 
 parserPlotGlobalOptions.add_argument("--legend", help="quick setting the legend position (default %(default)s)", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
 parserPlotGlobalOptions.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default=None)
@@ -357,19 +360,29 @@ parserOutputOptions.add_argument("-q", "--quiet", action="store_true", help="no 
 args = parser.parse_args()
 
 commentColour = ''
+commentBackgroundColour = ''
+uniqueBarMode = False
 
 if args.theme == 'gradient':
     args.theme = 'plotly_white'
 else:
     # We have chosen a theme, so just comment all colour settings out
     commentColour = '# '
+    commentBackgroundColour = '' if args.background_colour else '# '
     # Better to show all legend entries now if not otherwise chosen
     if args.legend_entries is None:
         args.legend_entries = 'all'
 
+if not args.background_colour:
+    args.background_colour = 'rgba(255, 255, 255, 0)'
+
 # Setting the legend entries default in case nothing was chosen
 if args.legend_entries is None:
     args.legend_entries = 'unique'
+
+if (args.bar_mode == 'unique_group'):
+    args.bar_mode = 'group'
+    uniqueBarMode = True
 
 if (not args.per_trace_colours and not args.per_frame_colours and not args.per_input_colours) or (args.per_trace_colours):
     args.per_trace_colours = True
@@ -397,6 +410,9 @@ for input in args.input:
     else:
         options.vertical = False
     options.horizontal = not options.vertical
+
+    if len(options.line_markers) == 0:
+        options.line_markers = ['circle']
 
     if options.trace_error == 'show':
         options.show_error = True
@@ -500,19 +516,20 @@ for input in args.input:
     masterFrame = None
     masterFrames = []
     for filename in input['value']:
-        if (not os.path.isfile(filename)):
-            raise Exception(f'Could not find input file {filename}!')
-
-        if (filename.endswith('.bz2')):
-            rawFile = bz2.BZ2File(filename, mode='rb')
-        else:
-            rawFile = open(filename, mode='rb')
-
         try:
-            frame = pickle.load(rawFile)
+            if (filename.endswith('.bz2')):
+                rawFile = bz2.BZ2File(filename, mode='rb')
+            else:
+                rawFile = open(filename, mode='rb')
+        except Exception:
+            raise Exception(f'Could not open file {filename}!')
+
+        rawData = rawFile.read()
+        rawFile.close()
+        try:
+            frame = pickle.loads(rawData)
         except Exception:
             frame = None
-            rawFile.seek(0)
 
         if frame is not None:
             if (isinstance(frame, list)):
@@ -537,7 +554,7 @@ for input in args.input:
 
                 masterFrames[_index] = (options, frame)
         else:
-            fFile = rawFile.read().decode('utf-8').replace('\r\n', '\n')
+            fFile = rawData.decode('utf-8').replace('\r\n', '\n')
             options = copy.deepcopy(inputOptions)
 
             # Check if we can detect the data delimiter if it was not passed in manually
@@ -744,11 +761,15 @@ for input in args.input:
             for sc in options.select_columns:
                 if (isFloat(sc)):
                     sc = float(sc)
-                for i, c in enumerate(frame.columns):
+                selection = reversed(list(enumerate(frame.columns))) if options.select_mode == 'last' else enumerate(frame.columns)
+                for i, c in selection:
                     if (sc == c):
                         options.select_icolumns.append(i)
                         selectedColumns.append(c)
-            if not args.quiet and len(options.select_columns) != len(selectedColumns):
+                        if (options.select_mode != 'all'):
+                            break
+
+            if not args.quiet and len(options.select_columns) > len(selectedColumns):
                 print(f"WARNING: some selected columns where not found in files {', '.join(input['value'])}", file=sys.stderr)
 
         if len(options.select_icolumns) > 0 and len(options.ignore_icolumns) > 0:
@@ -780,11 +801,16 @@ for input in args.input:
             for sr in options.select_rows:
                 if (isFloat(sr)):
                     sr = float(sr)
+                selection = enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist())
+                if options.select_mode == 'last':
+                    selection = reversed(selection)
                 for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
                     if (sr == r):
                         options.select_irows.append(i)
                         selectedRows.append(r)
-            if not args.quiet and len(options.select_rows) != len(selectedRows):
+                        if (options.select_mode != 'all'):
+                            break
+            if not args.quiet and len(options.select_rows) > len(selectedRows):
                 print(f"WARNING: some selected rows where not found in files {', '.join(input['value'])}", file=sys.stderr)
 
         if len(options.select_irows) > 0 and len(options.ignore_irows) > 0:
@@ -850,9 +876,15 @@ for input in args.input:
             filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(frame.shape[1])])
             frame = frame.loc[:, filterColumns]
 
+        if (options.drop_none):
+            frame = frame.dropna(how='all', axis=0)
+            frame = frame.dropna(how='all', axis=1)
+
         if len(options.column_names) > 0:
+            options.column_names = [float(x) if isFloat(x) else x for x in options.columns_names]
             frame.columns = (options.column_names + frame.columns.to_list()[len(options.column_names):])[:len(frame.columns)]
         if len(options.row_names) > 0:
+            options.row_names = [float(x) if isFloat(x) else x for x in options.row_names]
             frame.index = (options.row_names + frame.index.to_list()[len(options.row_names):])[:len(frame.index)]
 
         inputOptions.traceCount += len([x for x in frame.columns if not str(x) in options.specialColumns])
@@ -870,8 +902,9 @@ for input in args.input:
             else:
                 if not args.quiet and options.separator is not None and len(options.separator) > 1:
                     print(f"WARNING: cannot use separator '{options.separator}' (length > 1) for exporting the data frame, default to '\\t'", file=sys.stderr)
+            sFile = sys.stdout if sFile == 'stdout' else sys.stderr if sFile == 'stderr' else sFile
             frame.to_csv(sFile, sep=sep, na_rep='NaN')
-            if not args.quiet:
+            if not args.quiet and not sFile == sys.stdout and not sFile == sys.stderr:
                 if (len(masterFrames) == 1):
                     print(f'Frame saved to {options.file_frames[_index]}')
                 else:
@@ -908,15 +941,20 @@ for input in args.input:
             print(pSep)
 
     if options.pickle_frames is not None:
-        if options.pickle_frames.endswith(".bz2"):
+        if options.pickle_frames == 'stdout':
+            fDataframe = sys.stdout.buffer
+        elif options.pickle_frames == 'stderr':
+            fDataframe = sys.stderr.buffer
+        elif options.pickle_frames.endswith(".bz2"):
             fDataframe = bz2.BZ2File(options.pickle_frames, mode='wb')
         else:
             fDataframe = open(options.pickle_frames, mode="wb")
         pickle.dump([f for _, f in masterFrames], fDataframe, pickle.HIGHEST_PROTOCOL)
-        fDataframe.close()
+        if not fDataframe == sys.stdout.buffer and not fDataframe == sys.stderr.buffer:
+            fDataframe.close()
+            if not args.quiet:
+                print(f'Dataframe saved to {options.pickle_frames}')
         doneSomething = True
-        if not args.quiet:
-            print(f'Dataframe saved to {options.pickle_frames}')
 
     data.append({'options': options, 'frames': [f for _, f in masterFrames]})
 
@@ -1080,7 +1118,8 @@ for input in data:
             markercolour = colour.Color(options.line_colour)
             col = str(frame.columns[colIndex])
             specialColumnCount = len(options.specialColumns)
-            _errors = None
+            _errors_pos = None
+            _errors_neg = None
             _bases = None
             _labels = None
             _colours = None
@@ -1090,8 +1129,10 @@ for input in data:
                 nextCol = str(frame.columns[nextColIndex])
                 if (nextCol not in options.specialColumns):
                     break
-                if (nextCol == options.special_column_start + 'error') and (_errors is None):
-                    _errors = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
+                if (nextCol == options.special_column_start + 'error' or nextCol == options.special_column_start + 'error+') and (_errors_pos is None):
+                    _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
+                elif (nextCol == options.special_column_start + 'error-') and (_errors_neg is None):
+                    _errors_neg = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
                     _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'label') and (_labels is None):
@@ -1138,6 +1179,7 @@ for input in data:
                 legendEntries.append(traceName)
 
             if options.plot == 'line':
+                lineMarker = options.line_markers[-1] if len(options.line_markers) <= inputTraceIndex else options.line_markers[inputTraceIndex]
                 plotScript.write(f"""
 fig.add_trace(go.Scatter(
     name='{traceName}',
@@ -1154,7 +1196,7 @@ fig.add_trace(go.Scatter(
 {commentColour}    line_color='{fillcolour.hex}',
 {commentColour}    fillcolor='rgba({fillcolour.red}, {fillcolour.green}, {fillcolour.blue}, 0.5)', # Currently not supported through script, using default
     stackgroup='{'stackgroup-' + str(inputIndex) if options.line_stack else ''}',
-    marker_symbol='{options.line_marker}',
+    marker_symbol='{lineMarker}',
     marker_size={options.line_marker_size},
     fill='{options.line_fill}',
     line_dash='{options.line_dash}',
@@ -1166,13 +1208,14 @@ fig.add_trace(go.Scatter(
                     plotScript.write(f"""
     text={_labels},
     textposition='{options.line_text_position}',""")
-                if (_errors is not None):
+                if (_errors_pos is not None or _errors_neg is not None):
                     plotScript.write(f"""
     error_{'y' if options.horizontal else 'x'}=dict(
         visible={options.show_error},
         type='data',
         symmetric=True,
-        array={_errors},
+        array={_errors_pos},
+        arrayminus={_errors_neg},
     ),""")
                 plotScript.write(f"""
     opacity={options.opacity},
@@ -1196,7 +1239,7 @@ fig.add_trace(go.Bar(
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
-    offsetgroup={options.subplotTraceIndex + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None},
+    offsetgroup={(0 if (uniqueBarMode) else options.subplotTraceIndex) + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None},
     y={ydata},
     x={xdata},""")
                 if (_labels is not None):
@@ -1206,13 +1249,14 @@ fig.add_trace(go.Bar(
                 if (_bases is not None):
                     plotScript.write(f"""
     base={_bases},""")
-                if (_errors is not None):
+                if (_errors_pos is not None or _errors_neg is not None):
                     plotScript.write(f"""
     error_{'x' if options.horizontal else 'y'}=dict(
         visible={options.show_error},
         type='data',
         symmetric=True,
-        array={_errors},
+        array={_errors_pos},
+        arrayminus={_errors_neg},
     ),""")
                 plotScript.write(f"""
     opacity={options.opacity},
@@ -1345,7 +1389,7 @@ plotScript.write(f"{'# ' if args.legend_x_anchor is None else ''}fig.update_layo
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}', bgcolor='rgba(255,255,255,0)'))\n")
 
 plotScript.write("\n# Layout Plot and Background\n")
-plotScript.write(f"{commentColour}fig.update_layout(paper_bgcolor='rgba(255, 255, 255, 0)', plot_bgcolor='rgba(255, 255, 255, 0)')\n")
+plotScript.write(f"{commentBackgroundColour}fig.update_layout(paper_bgcolor='{args.background_colour}', plot_bgcolor='{args.background_colour}')\n")
 
 args.margin_b = args.margin_b if args.margin_b is not None else args.margins if args.margins is not None else None if defaultBottomMargin else 0
 args.margin_l = args.margin_l if args.margin_l is not None else args.margins if args.margins is not None else None if defaultLeftMargin else 0
@@ -1393,7 +1437,7 @@ def getLatestPlotlyOrca(destination=".", quiet=False):
     if not quiet:
         print(f"Fetching latest plotly orca release from {fetchUrl}", file=sys.stderr)
     lastReleases = urllib.request.urlopen(fetchUrl).read().decode()
-    appImage = re.search(r'a href="(.+\.AppImage)"', lastReleases)
+    appImage = re.search(r'a href="(.+\\.AppImage)"', lastReleases)
     if not appImage:
         raise Exception('Could not locate latest plotly orca AppImage release at {fetchUrl}')
     fileAppImage = os.path.realpath(destination) + '/' + os.path.basename(appImage.group(1))

@@ -299,11 +299,40 @@ class DataframeActions:
 
     def normaliseToColumnIdx(dataframe, columnIdx):
         normColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+        normColumn.replace(to_replace=0, value=numpy.nan)
         return dataframe.apply(lambda col: col / normColumn, axis=0)
 
     def normaliseToRowIdx(dataframe, rowIdx):
         normRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
-        return dataframe.iloc[:].apply(lambda row: row / normRow, axis=1)
+        return dataframe.apply(lambda row: row / normRow, axis=1)
+
+
+    def abs(dataframe):
+        return dataframe.abs()
+
+    def applyOnRowIdx(dataframe, rowIdx, function='abs', inclusive=True):
+        if function == 'abs':
+            dataframe.iloc[rowIdx, :] = dataframe.iloc[rowIdx, :].apply(pandas.abs, errors='coerce')
+        else:
+            applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
+            if function in ['div', 'mod']:
+                applyRow.replace(to_replace=0, value=numpy.nan)
+            dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
+            if not inclusive:
+                dataframe.iloc[rowIdx, :] = applyRow
+        return dataframe
+
+    def applyOnColumnIdx(dataframe, columnIdx, function='abs', inclusive=True):
+        if function == 'abs':
+            dataframe.iloc[:, columnIdx] = dataframe.iloc[:, columnIdx].apply(pandas.abs, errors='coerce')
+        else:
+            applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+            if function in ['div', 'mod']:
+                applyColumn.replace(to_replace=0, value=numpy.nan)
+            dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
+            if not inclusive:
+                dataframe.iloc[:, columnIdx] = applyColumn
+        return dataframe
 
 
     def addRow(dataframe, name, method='mean', where='back'):
@@ -313,6 +342,7 @@ class DataframeActions:
         else:
             newRow = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), method)(axis=0)
             newRow.name = name
+        newRow = newRow.where(pandas.notnull(newRow), None)
         return dataframe.append(newRow) if where == 'back' else dataframe.insert(0, newRow)
 
     def addColumn(dataframe, name, method='mean', where='back'):
@@ -322,14 +352,14 @@ class DataframeActions:
         else:
             newCol = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), method)(axis=1)
             newCol.name = name
-        print(newCol)
+        newCol = newCol.where(pandas.notnull(newCol), None)
         return pandas.concat([dataframe, newCol], axis=1) if where == 'back' else pandas.concat([newCol, dataframe], axis=1)
 
     def joinFrames(dataframes, method='index'):
         joinedFrame = None
         for frame in dataframes:
             joinedFrame = frame if joinedFrame is None else pandas.concat([joinedFrame, frame], axis=(1 if method == 'index' else 0), join='outer', verify_integrity=False, copy=True)
-        return joinedFrame
+        return joinedFrame.where(pandas.notnull(joinedFrame), None)
 
     def splitFramesByRowIdx(dataframes, rowIdx):
         newFrames = []
@@ -360,9 +390,12 @@ class DataframeActions:
         if not isinstance(filenames, list):
             filenames = [filenames]
         consoleWidth = shutil.get_terminal_size((80, 40));
-        pFiles = f"File: {', '.join(filenames)}"
-        pSep = '-' * min(consoleWidth.columns, len(pFiles))
-        print(pSep + '\n' + textwrap.fill(pFiles, width=consoleWidth.columns, subsequent_indent=' ') + '\n' + pSep)
+        pSep = '---'
+        if len(filenames) > 0:
+            pFiles = f"File: {', '.join(filenames)}"
+            pSep = '-' * min(consoleWidth.columns, len(pFiles))
+            print(pSep + '\n' + textwrap.fill(pFiles, width=consoleWidth.columns, subsequent_indent=' '))
+        print(pSep)
         with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', consoleWidth.columns, 'display.max_columns', None):
             print(dataframe)
         print(pSep)
@@ -410,9 +443,9 @@ parserFileOptions.add_argument("--no-columns", help="do not use a column row", d
 parserFileOptions.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 
-parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], sticky_default=False, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-order", help="sort rows after method or column (default %(default)s)", default='asc', choices=['asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-method", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-order", help="sort rows after method or column (default %(default)s)", default='asc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-method", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-irows", help="ignore these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -431,16 +464,24 @@ parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this c
 parserFileOptions.add_argument("--sort-by-column", help="sort rows after this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--data-scale", help="scales data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--data-offset", help="offsets data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-icolumn", help="normalise to this column index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-column", help="normalise to this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-irow", help="normalise to this row index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-row", help="normalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
-parserFileOptions.add_argument("--add-at", help="addnormalise to this row", type=str, default='back', choices=['front', 'back'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--add-method", help="addnormalise to this row", type=str, default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'nan', 'zero', 'one'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--add-column", help="addnormalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--add-row", help="addnormalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-at", help="add at the front or back of the dataframe", type=str, default='back', choices=['front', 'back'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-method", help="use this method to compute new row/column", type=str, default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'nan', 'zero', 'one'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-column", help="add a new column with name", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-row", help="add a new row with name", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
+parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-mode", help="convert all values to absolute values", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-function", help="convert all values to absolute values", type=str, default='add', choices=['abs', 'sub', 'add', 'mul', 'div', 'mod'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-icolumn", help="compute function on dataframe/column index", type=int, default=0, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-column", help="compute function on dataframe/column index", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-irow", help="compute function an dataframe/row index", type=int, default=0, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-row", help="compute function an dataframe/row index", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -453,6 +494,8 @@ parserFileOptions.add_argument("--split-icolumn", help="split frame along this c
 parserFileOptions.add_argument("--split-column", help="split frame along this column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-irow", help="split frame along this row index (-1 splits by columns)", type=int, sticky_default=True, choices=Range(-1, None), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
+
+
 
 parserFileOptions.add_argument("--file", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--pickle", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -468,7 +511,7 @@ parserPlotOptions.add_argument('--rowspan', type=int, choices=Range(1, None), he
 parserPlotOptions.add_argument('--col', type=int, choices=Range(1, None), help='subplot column (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument('--colspan', type=int, choices=Range(1, None), help='subplot columnspan (default %(default)s)', default=1, action=ChildAction, parent=inputFileArgument)
 
-parserPlotOptions.add_argument("--trace-error", help="show error markers in plot (need to be supplied by data)", default='hide', choices=['show', 'hide'], action=ChildAction, parent=inputFileArgument)
+parserPlotOptions.add_argument("--error", help="show error markers in plot (need to be supplied by data)", default='hide', choices=['show', 'hide'], action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--trace-names", help="set individual trace names", default=[], sticky_default=True, type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=colour.Color, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--line-width", help="set line width (default %(default)s)", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
@@ -653,7 +696,7 @@ for input in args.input:
     if len(options.line_markers) == 0:
         options.line_markers = ['circle']
 
-    if options.trace_error == 'show':
+    if options.error == 'show':
         options.show_error = True
     else:
         options.show_error = False
@@ -835,9 +878,9 @@ for input in args.input:
                 frame.index = frame.iloc[:, 0]
                 frame = DataframeActions.dropColumnsByIdx(frame, 0)
 
-            print(filename)
             options.filenames = [filename]
             options.frameCount = 1
+            frame = frame.fillna(value=numpy.nan);
             inputFrames.append((options, frame))
             inputOptions.frameCount += 1
 
@@ -847,8 +890,10 @@ for input in args.input:
     insertMethod = 'mean'
     addAt = 'back'
     addMethod = 'mean'
+    applyFuntion = 'add'
+    applyInclusive = True
     for (optionName, optionValue) in input['args'].ordered_args:
-        multiFrameActions = ['select_mode', 'sort_methiod', 'sort_order', 'add_at', 'add_method', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow']
+        multiFrameActions = ['select_mode', 'sort_methiod', 'sort_order', 'add_at', 'add_method', 'apply_function', 'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if optionName == 'transpose':
@@ -893,7 +938,7 @@ for input in args.input:
                 elif optionName == 'sort_by_irow':
                     frame = DataframeActions.sortColumnsByRowIdx(frame, optionValue, sortOrder)
                 elif optionName == 'normalise_to':
-                    frame = DataframeActions.normaliseToConstant(frame, float(optionValue))
+                    frame = DataframeActions.normaliseToConstant(frame, optionValue)
                 elif optionName == 'normalise_to_column':
                     columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
                     frame = DataframeActions.normaliseToColumnIdx(frame, columnIdx)
@@ -904,6 +949,18 @@ for input in args.input:
                     frame = DataframeActions.normaliseToRowIdx(frame, rowIdx)
                 elif optionName == 'normalise_to_irow':
                     frame = DataframeActions.normaliseToRowIdx(frame, optionValue)
+                elif optionName == 'abs':
+                    frame = DataframeActions.abs(frame)
+                elif optionName == 'apply_irow':
+                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, applyFunction, applyInclusive)
+                elif optionName == 'apply_row':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive)
+                elif optionName == 'apply_icolumn':
+                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, applyFunction, applyInclusive)
+                elif optionName == 'apply_column':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive)
                 elif optionName == 'add_column':
                     frame = DataframeActions.addColumn(frame, optionValue, addMethod, addAt)
                 elif optionName == 'add_row':
@@ -934,6 +991,10 @@ for input in args.input:
                 addAt = optionValue
             elif optionName == 'add_method':
                 addMethod = optionValue
+            elif optionName == 'apply_function':
+                applyFunction = optionValue
+            elif optionName == 'apply_mode':
+                applyInclusive = optionValue == 'inclusive'
             elif optionName == 'join':
                 newOptions = copy.deepcopy(inputOptions)
                 newOptions.frameCount = 1
@@ -960,14 +1021,17 @@ for input in args.input:
                 for frame in newFrames:
                     newOptions = copy.deepcopy(inputOptions)
                     newOptions.frameCount = 1
-                    newOptions.filenames = ['generic']
+                    newOptions.filenames = []
                     inputFrames.append((newOptions, frame))
 
     inputOptions.traceCount = 0
     inputOptions.frameCount = 0
-    for (_, frame) in inputFrames:
+    for _index, (options, frame) in enumerate(inputFrames):
         inputOptions.frameCount += 1
         inputOptions.traceCount += len([x for x in frame.columns if not str(x) in inputOptions.specialColumns])
+        frame = frame.replace([numpy.inf, -numpy.inf], numpy.nan)
+        frame = frame.where(pandas.notnull(frame), None)
+        inputFrames[_index] = (options, frame)
 
     inputOptions.inputIndex = totalInputCount
     totalTraceCount += inputOptions.traceCount
@@ -989,7 +1053,7 @@ for input in args.input:
     inputOptions.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
     subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
 
-    data.append({'options': copy.deepcopy(inputOptions), 'frames': [f for _, f in inputFrames]})
+    data.append({'options': copy.deepcopy(inputOptions), 'frames': [f.where(pandas.notnull(f), None) for _, f in inputFrames]})
 
 
 # Separate python outputs from actual output put the first script

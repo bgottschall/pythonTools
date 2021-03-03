@@ -36,7 +36,7 @@ import pickle
 import copy
 import textwrap
 import shutil
-
+import xopen
 
 def isFloat(val):
     if val is None:
@@ -46,6 +46,29 @@ def isFloat(val):
         return True
     except ValueError:
         return False
+
+
+class OrderedAction(argparse.Action):
+    def __init__(self, *args, ordered=True, sub_action='store', **kwargs):
+        super().__init__(*args, **kwargs)
+        self.action = sub_action
+        self.ordered = ordered
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        _action = parser._registry_get('action', self.action, self.action)(self.option_strings, self.dest)
+        _action(parser, namespace, values, option_string)
+        if 'ordered_args' not in namespace:
+            setattr(namespace, 'ordered_args', [])
+        if self.ordered:
+            previous = namespace.ordered_args
+            if (self.action == 'append'):
+                for i, (k, v) in enumerate(previous):
+                    if k == self.dest:
+                        previous[i] = (k, getattr(namespace, self.dest))
+                        break
+            else:
+                previous.append((self.dest, getattr(namespace, self.dest)))
+            setattr(namespace, 'ordered_args', previous)
 
 
 class ParentAction(argparse.Action):
@@ -61,39 +84,37 @@ class ParentAction(argparse.Action):
                 setattr(nspace, child.name, ChildAction._adjusting_defaults[child.name])
             else:
                 setattr(nspace, child.name, child.default)
-        items.append({'value': values, 'children': nspace})
+            setattr(nspace, 'ordered_args', [])
+        items.append({'value': values, 'args': nspace})
 
 
 class ChildAction(argparse.Action):
     _adjusting_defaults = {}
 
-    def __init__(self, *args, parent, sub_action='store', sticky_default=False, **kwargs):
+    def __init__(self, *args, parent, sub_action='store', sticky_default=False, ordered=True, **kwargs):
         super().__init__(*args, **kwargs)
         self.dest, self.name = parent.dest, self.dest
         self.sticky_default = sticky_default
-        self.action = sub_action
-        self._action = None
+
+        self.sub_action = sub_action
+        self.action = OrderedAction
+        self.ordered = ordered
+
         self.parent = parent
         parent.children.append(self)
-
-    def get_action(self, parser):
-        if self._action is None:
-            action_cls = parser._registry_get('action', self.action, self.action)
-            self._action = action_cls(self.option_strings, self.name)
-        return self._action
 
     def __call__(self, parser, namespace, values, option_string=None):
         ChildAction._adjusting_defaults[self.name] = True if self.action == 'store_true' else values
         items = getattr(namespace, self.dest)
         try:
-            lastParent = items[-1]['children']
+            lastParentNamespace = items[-1]['args']
         except Exception:
             if (self.sticky_default):
                 raise Exception(f'parameter --{self.name} can only be used after --{self.parent.dest}!') from None
                 exit(1)
             return
-        action = self.get_action(parser)
-        action(parser, lastParent, values, option_string)
+        _action = parser._registry_get('action', self.action, self.action)(self.option_strings, self.name, sub_action=self.sub_action, ordered=self.ordered)
+        _action(parser, lastParentNamespace, values, option_string)
 
 
 class Range(object):
@@ -165,6 +186,212 @@ def updateRange(_range, dataList):
                 _range[index]['max'] = max(scope) if _range[index]['max'] is None else max(_range[index]['max'], max(scope))
 
 
+class DataframeActions:
+    def transpose(dataframe):
+        return dataframe.transpose()
+
+    def dropNone(dataframe):
+        return frame.dropna(how='all', axis=0).dropna(how='all', axis=1)
+
+    def dropColumnsByIdx(dataframe, columns):
+        if not isinstance(columns, list):
+            columns = [columns]
+        filterColumns = numpy.array([False if i in columns else True for i in range(frame.shape[1])])
+        return frame.loc[:, filterColumns]
+
+    def filterColumnsByIdx(dataframe, columns):
+        if not isinstance(columns, list):
+            columns = [columns]
+        validColumns = range(frame.shape[1])
+        filterColumns = numpy.array([i for i in columns if i in validColumns])
+        return frame.iloc[:, filterColumns]
+
+    def dropRowsByIdx(dataframe, rows):
+        if not isinstance(rows, list):
+            rows = [rows]
+        filterRows = numpy.array([False if i in rows else True for i in range(frame.shape[0])])
+        return frame.iloc[filterRows, :]
+
+    def filterRowsByIdx(dataframe, rows):
+        if not isinstance(rows, list):
+            rows = [rows]
+        validRows = range(frame.shape[0])
+        filterRows = numpy.array([i for i in rows if i in validRows])
+        return frame.iloc[filterRows, :]
+
+    def getColumnIdx(dataframe, columns, mode='all', ignore_errors=False):
+        if not isinstance(columns, list):
+            columns = [columns]
+        columnIdx = []
+        for col in columns:
+            if col not in dataframe.columns:
+                if not ignore_errors:
+                    raise Exception(f'Could not find column name {col}')
+            else:
+                selection = reversed(list(enumerate(frame.columns.tolist()))) if mode == 'last' else enumerate(frame.columns.tolist())
+                for i, fcol in selection:
+                    if fcol == col:
+                        columnIdx.append(i)
+                        if mode != 'all':
+                            break
+        return columnIdx
+
+    def getRowIdx(dataframe, rows, mode='all', ignore_errors=False):
+        if not isinstance(rows, list):
+            rows = [rows]
+        rowIdx = []
+        for row in rows:
+            if row not in dataframe.index:
+                if not ignore_errors:
+                    raise Exception(f'Could not find row name {row}')
+            else:
+                selection = reversed(list(enumerate(frame.index.tolist()))) if mode == 'last' else enumerate(frame.index.tolist())
+                for i, frow in selection:
+                    if frow == row:
+                        rowIdx.append(i)
+                        if mode != 'all':
+                            break
+        return rowIdx
+
+    def setIndexColumnByIDx(dataframe, colIdx):
+        return dataframe.set_index(dataframe.iloc[:, colIdx])
+
+    def renameColumns(dataframe, names):
+        if not isinstance(names, list):
+            names = [names]
+        names = [float(x) if isFloat(x) else x for x in names]
+        dataframe.columns = (names + dataframe.columns.to_list()[len(names):])[:len(dataframe.columns)]
+        return dataframe
+
+    def renameRows(dataframe, names):
+        if not isinstance(names, list):
+            names = [names]
+        names = [float(x) if isFloat(x) else x for x in names]
+        dataframe.index = (names + dataframe.index.to_list()[len(names):])[:len(dataframe.index)]
+        return dataframe
+
+    def sortColumns(dataframe, method='mean', order='asc'):
+        sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), method)(axis=0)
+        sortKey.reset_index(drop=True, inplace=True)
+        return frame.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
+
+    def sortRows(dataframe, method='mean', order='asc'):
+        sortKey = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), method)(axis=1)
+        return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
+
+    def sortColumnsByRowIdx(dataframe, rowIdx, order='asc'):
+        sortKey = dataframe.iloc[rowIdx].apply(pandas.to_numeric, errors='coerce')
+        sortKey.reset_index(drop=True, inplace=True)
+        return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
+
+    def sortRowsByColumnIdx(dataframe, colIdx, order='asc'):
+        sortKey = frame.iloc[:, colIdx].apply(pandas.to_numeric, errors='coerce')
+        return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
+
+    def addConstant(dataframe, constant):
+        return dataframe + constant
+
+    def scaleConstant(dataframe, constant):
+        return dataframe * constant
+
+    def normaliseToConstant(dataframe, constant):
+        return dataframe / constant
+
+    def normaliseToColumnIdx(dataframe, columnIdx):
+        normColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+        return dataframe.apply(lambda col: col / normColumn, axis=0)
+
+    def normaliseToRowIdx(dataframe, rowIdx):
+        normRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
+        return dataframe.iloc[:].apply(lambda row: row / normRow, axis=1)
+
+
+    def addRow(dataframe, name, method='mean', where='back'):
+        if method in ['nan', 'zero', 'one']:
+            element = None if method == 'nan' else 0 if method == 'zero' else 1
+            newRow = pandas.Series(data=[element] * frame.shape[0], name=name)
+        else:
+            newRow = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), method)(axis=0)
+            newRow.name = name
+        return dataframe.append(newRow) if where == 'back' else dataframe.insert(0, newRow)
+
+    def addColumn(dataframe, name, method='mean', where='back'):
+        if method in ['nan', 'zero', 'one']:
+            element = None if method == 'nan' else 0 if method == 'zero' else 1
+            newCol = pandas.Series(data=[element] * frame.shape[0], name=name)
+        else:
+            newCol = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), method)(axis=1)
+            newCol.name = name
+        print(newCol)
+        return pandas.concat([dataframe, newCol], axis=1) if where == 'back' else pandas.concat([newCol, dataframe], axis=1)
+
+    def joinFrames(dataframes, method='index'):
+        joinedFrame = None
+        for frame in dataframes:
+            joinedFrame = frame if joinedFrame is None else pandas.concat([joinedFrame, frame], axis=(1 if method == 'index' else 0), join='outer', verify_integrity=False, copy=True)
+        return joinedFrame
+
+    def splitFramesByRowIdx(dataframes, rowIdx):
+        newFrames = []
+        for frame in dataframes:
+            if rowIdx == -1:
+                for v in frame.columns.unique():
+                    columnIdx = DataframeActions.getColumnIdx(frame, v, 'all', False)
+                    newFrames.append(DataframeActions.filterColumnsByIdx(frame, columnIdx))
+            else:
+                for v in frame.iloc[rowIdx, :].unique():
+                    newFrames.append(frame[frame.iloc[rowIdx, :] == v])
+        return newFrames
+
+
+    def splitFramesByColumnIdx(dataframes, columnIdx):
+        newFrames = []
+        for frame in dataframes:
+            if columnIdx == -1:
+                for v in frame.index.unique():
+                    rowIdx = DataframeActions.getRowIdx(frame, v, 'all', False)
+                    newFrames.append(DataframeActions.filterRowsByIdx(frame, rowIdx))
+            else:
+                for v in frame.iloc[:, columnIdx].unique():
+                    newFrames.append(frame[frame.iloc[:, columnIdx] == v])
+        return newFrames
+
+    def printFrames(filenames, dataframe):
+        if not isinstance(filenames, list):
+            filenames = [filenames]
+        consoleWidth = shutil.get_terminal_size((80, 40));
+        pFiles = f"File: {', '.join(filenames)}"
+        pSep = '-' * min(consoleWidth.columns, len(pFiles))
+        print(pSep + '\n' + textwrap.fill(pFiles, width=consoleWidth.columns, subsequent_indent=' ') + '\n' + pSep)
+        with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', consoleWidth.columns, 'display.max_columns', None):
+            print(dataframe)
+        print(pSep)
+
+
+    def framesToCSV(dataframes, filenames=['stdout'], separator=None, quiet=False):
+        _index = 1
+        for (frame, filename) in zip(dataframes, filenames):
+            sep = ';' if separator is None else separator
+            if filename.endswith('.tsv'):
+                sep = '\t'
+            elif filename.endswith('.csv'):
+                sep = ';'
+            fFile = sys.stdout if filename == 'stdout' else sys.stderr if filename == 'stderr' else xopen.xopen(filename)
+            frame.to_csv(fFile, sep=sep, na_rep='NaN')
+            if (fFile != sys.stdout and fFile != sys.stdout):
+                fFile.close()
+            if not quiet and not fFile == sys.stdout:
+                print(f'Frame {_index + 1}/{len(dataframes)} saved to {filename}')
+            _index += 1
+
+    def framesToPickle(dataframes, filename, quiet=False):
+        fFile = sys.stdout.buffer if filename == 'stdout' else sys.stderr.buffer if filename == 'stderr' else xopen.xopen(filename)
+        pickle.dump(dataframes, fFile, pickle.HIGHEST_PROTOCOL)
+        if not quiet and not fFile == sys.stdout.buffer:
+            print(f'Dataframes saved to {filename}')
+        if (fFile != sys.stdout.buffer and fFile != sys.stdout.buffer):
+            fFile.close()
+
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
 specialColumns = ['error', 'error-', 'error+', 'offset', 'label', 'colour']
@@ -179,43 +406,56 @@ inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input f
 parserFileOptions.add_argument("--special-column-start", help="special columns (or ignore columns) starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--split-icolumn", help="split data along column index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--split-column", help="split data along column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+
+
 parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], sticky_default=False, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-order", help="sort rows after method or column (default %(default)s)", default='asc', choices=['asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-method", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--select-irows", help="select these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-irows", help="ignore these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-rows", help="ignore these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-columns", help="sort column (default %(default)s)", default='none', choices=['none', 'asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-columns-by", help="sort column after method or row (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'row'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-columns-irow", help="sort column after this row index (requires sorting by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-columns-row", help="sort column after this row (requires sorting by 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-rows", help="sort rows (default %(default)s)", default='none', choices=['none', 'asc', 'desc'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-rows-by", help="sort rows after method or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'column'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-rows-icolumn", help="sort rows after this column index (requires sorting by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-rows-column", help="sort rows after this column (requires sorting by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(0, None), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-irows", help="select these row indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(0, None), nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-columns", help="sort columns", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-irow", help="sort column after this row index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-row", help="sort column after this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-rows", help="sort rows", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this column index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-column", help="sort rows after this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--data-scale", help="scales data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--data-offset", help="offsets data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to-icolumn", help="normalise to this column index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to-column", help="normalise to this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to-irow", help="normalise to this row index", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to-row", help="normalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
+parserFileOptions.add_argument("--add-at", help="addnormalise to this row", type=str, default='back', choices=['front', 'back'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-method", help="addnormalise to this row", type=str, default='mean', choices=['mean', 'median', 'std', 'min', 'max', 'nan', 'zero', 'one'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-column", help="addnormalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--add-row", help="addnormalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
 parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--drop-none", help="dropping rows/columns that are completely empty", sticky_default=True, default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", default='none', choices=Range(None, None, ['none', 'column', 'row']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-icolumn", help="normalise after this column index (requires normalisation by 'column') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-column", help="normalise after this column (requires normalisation by 'column') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-irow", help="normalise after this row index (requires normalisation by 'row') (default %(default)s)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-row", help="normalise after this row (requires normalisation by 'row') (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-scale", help="scale normalised data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-offset", help="offset normalised data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--pickle-frames", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--file-frames", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--transpose", help="transpose data", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--print", help="print out each parsed input file", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+
+parserFileOptions.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-icolumn", help="split frame along this column index (-1 splits by index)", type=int, sticky_default=True, choices=Range(-1, None), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-column", help="split frame along this column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-irow", help="split frame along this row index (-1 splits by columns)", type=int, sticky_default=True, choices=Range(-1, None), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
+
+parserFileOptions.add_argument("--file", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--pickle", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 # Per File Plotting Arguments:
 parserPlotOptions = parser.add_argument_group('plot options')
@@ -313,6 +553,8 @@ parserColourOptions.add_argument("--colour-count", help="colours to use from gra
 parserColourOptions.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
 parserColourOptions.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
 parserColourOptions.add_argument("--per-input-colours", help="one colour for each input file", action='store_true', default=False)
+parserColourOptions.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
+parserColourOptions.add_argument("--background-colour", help="set background colour  (default 'rgba(255, 255, 255, 0)')", type=str, default=None)
 
 parserPlotGlobalOptions = parser.add_argument_group('plot global options')
 
@@ -325,8 +567,6 @@ parserPlotGlobalOptions.add_argument("--vertical-spacing", type=float, help="ver
 parserPlotGlobalOptions.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots (default %(default)s)", default=0.08, choices=Range(0, 1))
 parserPlotGlobalOptions.add_argument("--font-size", help="font size (default %(default)s)", type=int, default=12)
 parserPlotGlobalOptions.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
-parserPlotGlobalOptions.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
-parserPlotGlobalOptions.add_argument("--background-colour", help="set background colour  (default 'rgba(255, 255, 255, 0)')", type=str, default=None)
 
 parserPlotGlobalOptions.add_argument("--legend", help="quick setting the legend position (default %(default)s)", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
 parserPlotGlobalOptions.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default=None)
@@ -352,7 +592,6 @@ parserPlotGlobalOptions.add_argument("--height", help="plot height", type=int)
 parserOutputOptions = parser.add_argument_group('output options')
 parserOutputOptions.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parserOutputOptions.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
-parserOutputOptions.add_argument("--print", help="print plotting information and data", default=False, action="store_true")
 parserOutputOptions.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
 parserOutputOptions.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png, py, ...)", default=[], nargs='+')
 parserOutputOptions.add_argument("-q", "--quiet", action="store_true", help="no warnings and don't open output file", default=False)
@@ -391,7 +630,7 @@ elif (args.per_frame_colours):
     args.per_input_colours = False
 
 for input in args.input:
-    options = input['children']
+    options = input['args']
     options.ignore_icolumns = list(set(options.ignore_icolumns))
     options.ignore_columns = list(set(options.ignore_columns))
     options.specialColumns = [options.special_column_start + x for x in specialColumns]
@@ -510,17 +749,15 @@ defaultPadMargin = False
 doneSomething = False
 
 for input in args.input:
-    inputOptions = input['children']
+    inputOptions = input['args']
+    inputFileNames = input['value']
+    inputOptions.filenames = inputFileNames
     inputOptions.traceCount = 0
     inputOptions.frameCount = 0
-    masterFrame = None
-    masterFrames = []
-    for filename in input['value']:
+    inputFrames = []
+    for filename in inputFileNames:
         try:
-            if (filename.endswith('.bz2')):
-                rawFile = bz2.BZ2File(filename, mode='rb')
-            else:
-                rawFile = open(filename, mode='rb')
+            rawFile = xopen.xopen(filename, mode='rb')
         except Exception:
             raise Exception(f'Could not open file {filename}!')
 
@@ -536,23 +773,21 @@ for input in args.input:
                 for f in frame:
                     if (not isinstance(f, pandas.DataFrame)):
                         raise Exception(f'pickle file {filename} is not a list of pandas dataframes!')
-                    masterFrames.append((copy.deepcopy(inputOptions), f))
+                    inputFrames.append((copy.deepcopy(inputOptions), f))
             elif (not isinstance(frame, pandas.DataFrame)):
                 raise Exception(f'pickle file {filename} is not a pandas data frame!')
             else:
-                masterFrames.append((copy.deepcopy(inputOptions), frame))
+                inputFrames.append((copy.deepcopy(inputOptions), frame))
 
             if not args.quiet and inputOptions.no_columns:
                 print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
 
             for _index, (options, frame) in enumerate(masterFrames):
-                if (options.transpose):
-                    frame = frame.transpose()
-                    # Restore an set index as first column:
+                # Restore an set index as first column:
                 if (not isinstance(frame.index, pandas.RangeIndex)):
                     frame.reset_index(inplace=True)
-
-                masterFrames[_index] = (options, frame)
+                options.filenames = [filename]
+                inputFrames[_index] = (options, frame)
         else:
             fFile = rawData.decode('utf-8').replace('\r\n', '\n')
             options = copy.deepcopy(inputOptions)
@@ -589,329 +824,154 @@ for input in args.input:
 
             fData = numpy.array(fData, dtype=object)
 
-            if (options.transpose):
-                fData = numpy.transpose(fData)
-
-            if (options.no_columns):
-                frame = pandas.DataFrame(fData)
-            else:
-                frame = pandas.DataFrame(fData[1:])
+            frame = pandas.DataFrame(fData)
 
             if (not options.no_columns):
-                frame.columns = fData[0]
+                frame.columns = frame.iloc[0]
+                frame.columns.name = ''
+                frame = DataframeActions.dropRowsByIdx(frame, 0)
 
-            masterFrames.append((options, frame))
+            if (not options.no_index):
+                frame.index = frame.iloc[:, 0]
+                frame = DataframeActions.dropColumnsByIdx(frame, 0)
 
-    for _index, (options, frame) in enumerate(masterFrames):
-        if (not options.no_index):
-            iIndexColumn = 0
-            if (options.index_icolumn is not None):
-                if (options.index_icolumn >= frame.shape[1]):
-                    raise Exception(f"Index column index {options.index_icolumn} out of bounds in {', '.join(input['value'])}!")
-                else:
-                    iIndexColumn = options.index_icolumn
-            elif (options.index_column is not None):
-                if (options.index_column not in frame.columns):
-                    raise Exception(f"Index column {options.index_column} not found in {', '.join(input['value'])}!")
-                else:
-                    iIndexColumn = frame.columns.tolist().index(options.index_column)
-            options.index_icolumn = iIndexColumn
+            print(filename)
+            options.filenames = [filename]
+            options.frameCount = 1
+            inputFrames.append((options, frame))
+            inputOptions.frameCount += 1
+
+    selectMode = 'all'
+    sortMethod = 'mean'
+    sortOrder = 'asc'
+    insertMethod = 'mean'
+    addAt = 'back'
+    addMethod = 'mean'
+    for (optionName, optionValue) in input['args'].ordered_args:
+        multiFrameActions = ['select_mode', 'sort_methiod', 'sort_order', 'add_at', 'add_method', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow']
+        if optionName not in multiFrameActions:
+            for _index, (frameOptions, frame) in enumerate(inputFrames):
+                if optionName == 'transpose':
+                    frame = DataframeActions.transpose(frame)
+                elif optionName == 'index_column':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.setIndexColumnByIDx(frame, columnIdx)
+                elif optionName == 'index_icolumn':
+                    frame = DataframeActions.setIndexColumnByIDx(frame, optionValue)
+                elif optionName == 'ignore_columns':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.dropColumnsByIdx(frame, columnIdx)
+                elif optionName == 'ignore_icolumns':
+                    frame = DataframeActions.dropColumnsByIdx(frame, optionValue)
+                elif optionName == 'ignore_rows':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.dropRowsByIdx(frame, rowIdx)
+                elif optionName == 'ignore_irows':
+                    frame = DataframeActions.dropRowsByIdx(frame, optionValue)
+                elif optionName == 'select_columns':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.filterColumnsByIdx(frame, columnIdx)
+                elif optionName == 'select_icolumns':
+                    frame = DataframeActions.filterColumnsByIdx(frame, optionValue)
+                elif optionName == 'select_rows':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.filterRowsByIdx(frame, rowIdx)
+                elif optionName == 'select_irows':
+                    frame = DataframeActions.filterRowsByIdx(frame, optionValue)
+                elif optionName == 'sort_columns':
+                    frame = DataframeActions.sortColumns(frame, sortMethod, sortOrder)
+                elif optionName == 'sort_rows':
+                    frame = DataframeActions.sortRows(frame, sortMethod, sortOrder)
+                elif optionName == 'sort_by_column':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.sortRowsByColumnIdx(frame, columnIdx, sortOrder)
+                elif optionName == 'sort_by_icolumn':
+                    frame = DataframeActions.sortRowsByColumnIdx(frame, optionValue, sortOrder)
+                elif optionName == 'sort_by_row':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.sortColumnsByRowIdx(frame, rowIdx, sortOrder)
+                elif optionName == 'sort_by_irow':
+                    frame = DataframeActions.sortColumnsByRowIdx(frame, optionValue, sortOrder)
+                elif optionName == 'normalise_to':
+                    frame = DataframeActions.normaliseToConstant(frame, float(optionValue))
+                elif optionName == 'normalise_to_column':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.normaliseToColumnIdx(frame, columnIdx)
+                elif optionName == 'normalise_to_icolumn':
+                    frame = DataframeActions.normaliseToColumnIdx(frame, optionValue)
+                elif optionName == 'normalise_to_row':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.normaliseToRowIdx(frame, rowIdx)
+                elif optionName == 'normalise_to_irow':
+                    frame = DataframeActions.normaliseToRowIdx(frame, optionValue)
+                elif optionName == 'add_column':
+                    frame = DataframeActions.addColumn(frame, optionValue, addMethod, addAt)
+                elif optionName == 'add_row':
+                    frame = DataframeActions.addRow(frame, optionValue, addMethod, addAt)
+                elif optionName == 'data_offset':
+                    frame = DataframeActions.addConstant(frame, optionValue)
+                elif optionName == 'data_scale':
+                    frame = DataframeActions.scaleConstant(frame, optionValue)
+                elif optionName == 'column_names':
+                    frame = DataframeActions.renameColumns(frame, optionValue)
+                elif optionName == 'row_names':
+                    frame = DataframeActions.renameRows(frame, optionValue)
+                elif optionName == 'drop_none':
+                    frame = DataframeActions.dropNone(frame)
+                elif optionName == 'print':
+                    DataframeActions.printFrames(frameOptions.filenames, frame)
+                    doneSomething = True
+
+                inputFrames[_index] = (frameOptions, frame)
         else:
-            options.index_icolumn = None
-
-        masterFrames[_index] = (options, frame)
-
-    if options.join != 'none':
-        joinedFrame = None
-        newIndex = None
-        revisedOptions = copy.deepcopy(inputOptions)
-        for options, frame in masterFrames:
-            if (inputOptions.join == 'index' and not inputOptions.no_index):
-                if newIndex is None:
-                    newIndex = frame.columns[options.index_icolumn]
-                frame.set_index(frame.columns[options.index_icolumn], inplace=True)
-            elif not inputOptions.no_index and joinedFrame is None:
-                revisedOptions.index_icolumn = options.index_icolumn
-            joinedFrame = frame if joinedFrame is None else pandas.concat([joinedFrame, frame], axis=1 if inputOptions.join == 'index' else 0, join='outer', verify_integrity=False, copy=True)
-
-        if (inputOptions.join == 'index' and not inputOptions.no_index):
-            joinedFrame.index.name = newIndex
-            joinedFrame.reset_index(inplace=True)
-            revisedOptions.index_icolumn = 0
-
-        # Working still with a temporary index, drop after joining
-        joinedFrame.reset_index(drop=True, inplace=True)
-
-        masterFrames = [(revisedOptions, joinedFrame)]
-
-    newMasterFrames = []
-    for _index, (options, frame) in enumerate(masterFrames):
-        if options.sort_columns != 'none':
-            if len(options.select_columns) > 0 or len(options.select_icolumns) > 0:
-                if not args.quiet:
-                    print("WARNING: --select-columns and --select-icolumns column order overrides --sort-columns!")
-            else:
-                sortKey = None
-                if options.sort_columns_by == 'row':
-                    if options.sort_columns_irow is None and options.sort_columns_row is None:
-                        options.sort_columns_irow = 0
-                    elif options.sort_columns_irow is None:
-                        if (options.index_icolumn is not None):
-                            lIndex = frame.iloc[:, options.index_icolumn].tolist()
-                        else:
-                            lIndex = frame.index.tolist()
-                        if (options.sort_columns_row not in lIndex):
-                            raise Exception(f"Sort row {options.sort_columns_row} not found in files {', '.join(input['value'])}")
-                        options.sort_columns_irow = lIndex.index(options.sort_columns_row)
-                    if (options.sort_columns_irow >= frame.shape[0]):
-                        raise Exception(f"Sort row is out of bounds in files {', '.join(input['value'])}")
-                    sortKey = frame.iloc[options.sort_columns_irow].apply(pandas.to_numeric, errors='coerce')
-                else:
-                    sortKey = getattr(frame.apply(pandas.to_numeric, errors='coerce'), options.sort_columns_by)(axis=0)
-                sortKey.reset_index(drop=True, inplace=True)
-                sortKey = sortKey.sort_values(ascending=options.sort_columns == 'asc').index
-                frame = frame.iloc[:, sortKey]
-                if (options.index_icolumn is not None):
-                    options.index_icolumn = sortKey.get_loc(options.index_icolumn)
-
-        if options.sort_rows != 'none':
-            if len(options.select_rows) > 0 or len(options.select_irows) > 0:
-                if not args.quiet:
-                    print("WARNING: --select-rows and --select-irows row order overrides --sort-rows!")
-            else:
-                sortKey = None
-                if options.sort_rows_by == 'column':
-                    if options.sort_rows_icolumn is None and options.sort_rows_column is None:
-                        options.sort_rows_icolumn = 0
-                    elif options.sort_rows_icolumn is None:
-                        lColumns = frame.columns.tolist()
-                        if (options.sort_rows_column not in lColumns):
-                            raise Exception(f"Sort column {options.sort_rows_column} not found in files {', '.join(input['value'])}")
-                        options.sort_rows_icolumn = lColumns.index(options.sort_rows_column)
-                    if (options.sort_rows_icolumn >= frame.shape[1]):
-                        raise Exception(f"Sort column is out of bounds in files {', '.join(input['value'])}")
-                    # sortKey = frame.iloc[:, options.sort_rows_icolumn].apply(pandas.to_numeric, errors='coerce')
-                    sortKey = frame.iloc[:, options.sort_rows_icolumn]
-                else:
-                    filterColumns = numpy.array([True] * frame.shape[1])
-                    if options.index_icolumn is not False:
-                        filterColumns[options.index_icolumn] = False
-                    sortKey = getattr(frame.loc[:, filterColumns].apply(pandas.to_numeric, errors='coerce'), options.sort_rows_by)(axis=1)
-                frame = frame.reindex(sortKey.sort_values(ascending=options.sort_rows == 'asc').index)
-
-        if options.normalise_to != 'none':
-            # Create a mask to exclude our index and special columns from normalisation
-            filterColumns = numpy.array([False if frame.columns[x] in options.specialColumns or (options.index_icolumn is not False and x == options.index_icolumn) else True for x in range(frame.shape[1])])
-            # Convert the data to numeric and set all values that are not numeric to NaN
-            frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(pandas.to_numeric, errors='coerce')
-            if options.normalise_to == 'row':
-                if options.normalise_irow is None and options.normalise_row is None:
-                    options.normalise_irow = 0
-                elif options.normalise_irow is None:
-                    if (options.index_icolumn is not None):
-                        lIndex = frame.iloc[:, options.index_icolumn].tolist()
-                    else:
-                        lIndex = frame.index.tolist()
-                    if (options.normalise_row not in lIndex):
-                        raise Exception(f"Normalisation row {options.normalise_row} not found in files {', '.join(input['value'])}")
-                    options.normalise_irow = lIndex.index(options.normalise_row)
-                if (options.normalise_irow >= frame.shape[0]):
-                    raise Exception(f"Normalisation row is out of bounds in files {', '.join(input['value'])}")
-                normRow = frame.iloc[options.normalise_irow, filterColumns].apply(pandas.to_numeric, errors='coerce')
-                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normRow) * options.normalise_scale) + options.normalise_offset, axis=1)
-            elif options.normalise_to == 'column':
-                if options.normalise_icolumn is None and options.normalise_column is None:
-                    options.normalise_icolumn = 0
-                elif options.normalise_icolumn is None:
-                    lColumns = frame.columns.tolist()
-                    if (options.normalise_column not in lColumns):
-                        raise Exception(f"Normalisation column {options.normalise_column} not found in files {', '.join(input['value'])}")
-                    options.normalise_icolumn = lColumns.index(options.normalise_column)
-                if (options.normalise_icolumn >= frame.shape[1]):
-                    raise Exception(f"Normalisation column is out of bounds in files {', '.join(input['value'])}")
-                normColumn = frame.iloc[:, options.normalise_icolumn].apply(pandas.to_numeric, errors='coerce')
-                frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: ((x / normColumn) * options.normalise_scale) + options.normalise_offset, axis=0)
-            else:
-                options.normalise_to = float(options.normalise_to)
-                if options.normalise_to == 0:
-                    print("WARNING: cannot normalise data to 0!")
-                else:
-                    frame.iloc[:, filterColumns] = frame.iloc[:, filterColumns].apply(lambda x: x.apply(lambda y: ((y / options.normalise_to) * options.normalise_scale) + options.normalise_offset))
-
-        # Column Selection
-        if len(options.ignore_icolumns) > 0:
-            options.ignore_icolumns = [i for i in options.ignore_icolumns if i >= 0 and i < frame.shape[1]]
-
-        if len(options.ignore_columns) > 0:
-            for i, c in enumerate(frame.columns):
-                if c in options.ignore_columns:
-                    options.ignore_icolumns.append(i)
-            options.ignore_icolumns = list(set(options.ignore_icolumns))
-
-        selectColumns = len(options.select_icolumns) > 0 or len(options.select_columns) > 0
-
-        if len(options.select_icolumns) > 0:
-            selectCount = len(options.select_icolumns)
-            options.select_icolumns = [i for i in options.select_icolumns if i >= 0 and i < frame.shape[1]]
-            if not args.quiet and (selectCount != len(options.select_icolumns)):
-                print(f"WARNING: some selected column indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
-
-        if len(options.select_columns) > 0:
-            selectedColumns = []
-            for sc in options.select_columns:
-                if (isFloat(sc)):
-                    sc = float(sc)
-                selection = reversed(list(enumerate(frame.columns))) if options.select_mode == 'last' else enumerate(frame.columns)
-                for i, c in selection:
-                    if (sc == c):
-                        options.select_icolumns.append(i)
-                        selectedColumns.append(c)
-                        if (options.select_mode != 'all'):
-                            break
-
-            if not args.quiet and len(options.select_columns) > len(selectedColumns):
-                print(f"WARNING: some selected columns where not found in files {', '.join(input['value'])}", file=sys.stderr)
-
-        if len(options.select_icolumns) > 0 and len(options.ignore_icolumns) > 0:
-            options.select_icolumns = [i for i in options.select_icolumns if i not in options.ignore_icolumns]
-
-        if (len(options.select_icolumns) == 0) and selectColumns:
-            raise Exception(f"No selected columns found or all are ignored in files {', '.join(input['value'])}!")
-
-        # Row Selection
-        if len(options.ignore_irows) > 0:
-            options.ignore_irows = [i for i in options.ignore_irows if i >= 0 and i < frame.shape[0]]
-
-        if len(options.ignore_rows) > 0:
-            for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
-                if r in options.ignore_rows:
-                    options.ignore_irows.append(i)
-            options.ignore_irows = list(set(options.ignore_irows))
-
-        selectRows = len(options.select_irows) > 0 or len(options.select_rows) > 0
-
-        if len(options.select_irows) > 0:
-            selectCount = len(options.select_irows)
-            options.select_irows = [i for i in options.select_irows if i >= 0 and i < frame.shape[0]]
-            if not args.quiet and (selectCount != len(options.select_irows)):
-                print(f"WARNING: some selected row indexes where not found in files {', '.join(input['value'])}", file=sys.stderr)
-
-        if len(options.select_rows) > 0:
-            selectedRows = []
-            for sr in options.select_rows:
-                if (isFloat(sr)):
-                    sr = float(sr)
-                selection = enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist())
-                if options.select_mode == 'last':
-                    selection = reversed(selection)
-                for i, r in enumerate(frame.iloc[:, options.index_icolumn].tolist() if options.index_icolumn is not None else frame.index.tolist()):
-                    if (sr == r):
-                        options.select_irows.append(i)
-                        selectedRows.append(r)
-                        if (options.select_mode != 'all'):
-                            break
-            if not args.quiet and len(options.select_rows) > len(selectedRows):
-                print(f"WARNING: some selected rows where not found in files {', '.join(input['value'])}", file=sys.stderr)
-
-        if len(options.select_irows) > 0 and len(options.ignore_irows) > 0:
-            options.select_irows = [i for i in options.select_irows if i not in options.ignore_irows]
-
-        if (len(options.select_irows) == 0) and selectRows:
-            raise Exception(f"No selected rows found or all are ignored in files {', '.join(input['value'])}!")
-
-        # Frame splitting
-        if (options.split_icolumn is not None) or (options.split_column is not None):
-            iSplitColumn = None
-            if (options.split_icolumn is not None):
-                if (options.split_icolumn >= frame.shape[1]):
-                    raise Exception(f"Split column index {options.split_icolumn} out of bounds in files {', '.join(input['value'])}!")
-                else:
-                    iSplitColumn = options.split_icolumn
-            elif (options.split_column is not None):
-                if (options.split_column not in frame.columns):
-                    raise Exception(f"Split column {options.split_column} not found in files {', '.join(input['value'])}!")
-                else:
-                    iSplitColumn = frame.columns.tolist().index(options.split_column)
-            for v in frame.iloc[:, iSplitColumn].unique():
-                newFrame = frame[frame.iloc[:, iSplitColumn] == v].reset_index(drop=True)
-                newMasterFrames.append((options, newFrame))
-        else:
-            masterFrames[_index] = (options, frame)
-            newMasterFrames.append(masterFrames[_index])
-
-    masterFrames = newMasterFrames
+            if optionName == 'select_mode':
+                selectMode = optionValue
+            elif optionName == 'sort_method':
+                sortMethod = optionValue
+            elif optionName == 'sort_order':
+                sortOrder = optionValue
+            elif optionName == 'add_at':
+                addAt = optionValue
+            elif optionName == 'add_method':
+                addMethod = optionValue
+            elif optionName == 'join':
+                newOptions = copy.deepcopy(inputOptions)
+                newOptions.frameCount = 1
+                inputFrames = [(copy.deepcopy(inputOptions), DataframeActions.joinFrames([frame for (_, frame) in inputFrames], optionValue))]
+            elif optionName == 'file':
+                DataframeActions.framesToCSV([frame for (_, frame) in inputFrames], optionValue, inputOptions.separator, args.quiet)
+                doneSomething = True
+            elif optionName == 'pickle':
+                DataframeActions.framesToPickle([frame for (_, frame) in inputFrames], optionValue, args.quiet)
+                doneSomething = True
+            elif optionName in ['split_column', 'split_icolumn', 'split_row', 'split_irow']:
+                newFrames = []
+                if optionName == 'split_icolumn':
+                    newFrames = DataframeActions.splitFramesByColumnIdx([frame for (_, frame) in inputFrames], optionValue)
+                elif optionName == 'split_column':
+                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
+                    newFrames = DataframeActions.splitFramesByColumnIdx([frame for (_, frame) in inputFrames], columnIdx)
+                elif optionName == 'split_irow':
+                    newFrames = DataframeActions.splitFramesByRowIdx([frame for (_, frame) in inputFrames], optionValue)
+                elif optionName == 'split_row':
+                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
+                    newFrames = DataframeActions.splitFramesByRowIdx([frame for (_, frame) in inputFrames], rowIdx)
+                inputFrames = []
+                for frame in newFrames:
+                    newOptions = copy.deepcopy(inputOptions)
+                    newOptions.frameCount = 1
+                    newOptions.filenames = ['generic']
+                    inputFrames.append((newOptions, frame))
 
     inputOptions.traceCount = 0
-    for _index, (options, frame) in enumerate(masterFrames):
-
-        # Filter selected/ignored rows
-        if len(options.select_irows) > 0:
-            frame = frame.iloc[options.select_irows, :]
-        elif len(options.ignore_irows) > 0:
-            filterRows = numpy.array([False if i in options.ignore_irows else True for i in range(frame.shape[0])])
-            frame = frame.loc[filterRows, :]
-
-        # Filter selcted/ignored columns
-        if (options.index_icolumn is not None):
-            frame.set_index(frame.iloc[:, options.index_icolumn], inplace=True)
-            # If the index column was explicitly selected, do not remove it
-            if options.index_icolumn not in options.select_icolumns:
-                filterColumns = numpy.array([True] * frame.shape[1])
-                filterColumns[options.index_icolumn] = False
-                frame = frame.loc[:, filterColumns]
-                if len(options.select_icolumns) > 0:
-                    options.select_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.select_icolumns]
-                elif len(options.ignore_icolumns) > 0:
-                    options.ignore_icolumns = [i - 1 if i >= options.index_icolumn else i for i in options.ignore_icolumns]
-        else:
-            frame.reset_index(drop=True, inplace=True)
-
-        if len(options.select_icolumns) > 0:
-            newFrame = None
-            for i in options.select_icolumns:
-                column = frame.iloc[:, i].to_frame()
-                newFrame = column if newFrame is None else pandas.concat([newFrame, column], axis=1, verify_integrity=False, copy=True)
-            frame = newFrame
-        elif len(options.ignore_icolumns) > 0:
-            filterColumns = numpy.array([False if i in options.ignore_icolumns else True for i in range(frame.shape[1])])
-            frame = frame.loc[:, filterColumns]
-
-        if (options.drop_none):
-            frame = frame.dropna(how='all', axis=0)
-            frame = frame.dropna(how='all', axis=1)
-
-        if len(options.column_names) > 0:
-            options.column_names = [float(x) if isFloat(x) else x for x in options.columns_names]
-            frame.columns = (options.column_names + frame.columns.to_list()[len(options.column_names):])[:len(frame.columns)]
-        if len(options.row_names) > 0:
-            options.row_names = [float(x) if isFloat(x) else x for x in options.row_names]
-            frame.index = (options.row_names + frame.index.to_list()[len(options.row_names):])[:len(frame.index)]
-
-        inputOptions.traceCount += len([x for x in frame.columns if not str(x) in options.specialColumns])
-        masterFrames[_index] = (options, frame)
-        totalFrameCount += 1
-
-        if options.file_frames is not None and _index < len(options.file_frames):
-            doneSomething = True
-            sFile = options.file_frames[_index]
-            sep = '\t' if options.separator is None or len(options.separator) > 1 else options.separator
-            if sFile.endswith('.tsv'):
-                sep = '\t'
-            elif sFile.endswith('.csv'):
-                sep = ';'
-            else:
-                if not args.quiet and options.separator is not None and len(options.separator) > 1:
-                    print(f"WARNING: cannot use separator '{options.separator}' (length > 1) for exporting the data frame, default to '\\t'", file=sys.stderr)
-            sFile = sys.stdout if sFile == 'stdout' else sys.stderr if sFile == 'stderr' else sFile
-            frame.to_csv(sFile, sep=sep, na_rep='NaN')
-            if not args.quiet and not sFile == sys.stdout and not sFile == sys.stderr:
-                if (len(masterFrames) == 1):
-                    print(f'Frame saved to {options.file_frames[_index]}')
-                else:
-                    print(f'Frame {_index + 1}/{len(masterFrames)} saved to {options.file_frames[_index]}')
+    inputOptions.frameCount = 0
+    for (_, frame) in inputFrames:
+        inputOptions.frameCount += 1
+        inputOptions.traceCount += len([x for x in frame.columns if not str(x) in inputOptions.specialColumns])
 
     inputOptions.inputIndex = totalInputCount
     totalTraceCount += inputOptions.traceCount
+    totalFrameCount += inputOptions.frameCount
     totalInputCount += 1
 
     updateRange(subplotGrid, [inputOptions.col + (inputOptions.colspan - 1), inputOptions.row + (inputOptions.rowspan - 1)])
@@ -926,37 +986,10 @@ for input in args.input:
     if inputOptions.title is not None:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['title'] = inputOptions.title
 
-    options.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
+    inputOptions.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
     subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
 
-    if (args.print):
-        doneSomething = True
-        pFiles = f"Files: {', '.join(input['value'])}"
-        pGrid = f"Frames: {len(masterFrames)}, Plot: {inputOptions.plot}  Grid: [ {inputOptions.col}{' - ' + str(inputOptions.col + inputOptions.colspan - 1) if inputOptions.colspan > 1 else ''}, {inputOptions.row}{' - ' + str(inputOptions.row + inputOptions.rowspan - 1) if inputOptions.rowspan > 1 else ''} ]"
-        pSep = '-' * min(80, max(len(pGrid), len(pFiles)))
-        print(pSep + '\n' + textwrap.fill(pFiles, width=80, subsequent_indent=' ') + '\n' + textwrap.fill(pGrid, width=80, subsequent_indent=' ') + '\n' + pSep)
-        for _, f in masterFrames:
-            with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', None, 'display.max_columns', None):
-                print(f)
-            print(pSep)
-
-    if options.pickle_frames is not None:
-        if options.pickle_frames == 'stdout':
-            fDataframe = sys.stdout.buffer
-        elif options.pickle_frames == 'stderr':
-            fDataframe = sys.stderr.buffer
-        elif options.pickle_frames.endswith(".bz2"):
-            fDataframe = bz2.BZ2File(options.pickle_frames, mode='wb')
-        else:
-            fDataframe = open(options.pickle_frames, mode="wb")
-        pickle.dump([f for _, f in masterFrames], fDataframe, pickle.HIGHEST_PROTOCOL)
-        if not fDataframe == sys.stdout.buffer and not fDataframe == sys.stderr.buffer:
-            fDataframe.close()
-            if not args.quiet:
-                print(f'Dataframe saved to {options.pickle_frames}')
-        doneSomething = True
-
-    data.append({'options': options, 'frames': [f for _, f in masterFrames]})
+    data.append({'options': copy.deepcopy(inputOptions), 'frames': [f for _, f in inputFrames]})
 
 
 # Separate python outputs from actual output put the first script

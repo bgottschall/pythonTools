@@ -13,7 +13,7 @@ PIP3 packages:
 * colour
 
 ```
-pip3 install plotly numpy pandas colour
+pip3 install plotly numpy pandas colour xopen
 ```
 
 Plotly also requires a special orca version to export any other format than HTML. The plotly orca will be automatically downloaded up on first usage or can be retrieved from https://github.com/plotly/orca/releases/latest .
@@ -21,6 +21,8 @@ Plotly also requires a special orca version to export any other format than HTML
 ## Usage
 
 The script is designed to process any formatted data file (e.g. tsv, csv, pandas df) into a table of rows and columns. Every row is a data point while every column is a data trace. Columns starting with '_' are treated as special columns (e.g. _error _labels, _colour or _offset). Rows starting with '#' are treated as comments and are ignored. (Those special characters can be adjusted with the rescpective parameters).
+
+The input parsing arguments are processed in order and can be used as many times as whished. This enables very powerful preprocessing of the data before the actual plotting takes place. One can even do very complex inter-column and inter-row computation, normalisation, adding rows/columns with the average and a lot more. This script can also be used to just process the input data and output it as a new file or pickle container.
 
 There are global parameters which can be set once per call like all colour options, legend options, width, height or output. The next set or parameters can only be specified on an input file and affect how the file is treated and plotted like row, col, sorting options, selection and ignoring of data points or plot type (line, bar, box, violin). However some options will be inherited by the following input files e.g. row, col and plot type and some won't be inherited like all input file parsing options (sorting, selection...) or options that affect the actual plot like axis titles or ranges. Options that are inherited can also be specified before an input file.
 
@@ -36,12 +38,12 @@ plot.py -i lines.tsv --print
 
 Or create a standalone plotting script out of the input data which incorporates all the options that can be set and are shown later:
 ```
-plot.py -i lines.tsv --script lines.py
+plot.py -i lines.tsv --output lines.py
 ```
 
 All these options can also be combined to print the data, open a browser plot and save it as a PDF:
 ```
-plot.py -i lines.tsv --print --browser --script lines.py --width 1920 --height 1080 --output lines.pdf
+plot.py -i lines.tsv --print --browser --output lines.py lines.pdf --width 1920 --height 1080
 ```
 
 

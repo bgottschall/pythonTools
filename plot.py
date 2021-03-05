@@ -30,13 +30,13 @@ import re
 import colour
 import subprocess
 import statistics
-import bz2
 import sys
 import pickle
 import copy
 import textwrap
 import shutil
 import xopen
+
 
 def isFloat(val):
     if val is None:
@@ -247,7 +247,7 @@ class DataframeActions:
                 if not ignore_errors:
                     raise Exception(f'Could not find row name {row}')
             else:
-                selection = reversed(list(enumeratedata(dataframe.index.tolist()))) if mode == 'last' else enumerate(dataframe.index.tolist())
+                selection = reversed(list(enumerate(dataframe.index.tolist()))) if mode == 'last' else enumerate(dataframe.index.tolist())
                 for i, frow in selection:
                     if frow == row:
                         rowIdx.append(i)
@@ -334,7 +334,6 @@ class DataframeActions:
                 dataframe.iloc[:, columnIdx] = applyColumn
         return dataframe
 
-
     def addRow(dataframe, name, method='mean', where='back'):
         if method in ['nan', 'zero', 'one']:
             element = numpy.nan if method == 'nan' else 0 if method == 'zero' else 1
@@ -372,7 +371,6 @@ class DataframeActions:
                     newFrames.append(frame[frame.iloc[rowIdx, :] == v])
         return newFrames
 
-
     def splitFramesByColumnIdx(dataframes, columnIdx):
         newFrames = []
         for frame in dataframes:
@@ -389,7 +387,7 @@ class DataframeActions:
     def printFrames(filenames, dataframe):
         if not isinstance(filenames, list):
             filenames = [filenames]
-        consoleWidth = shutil.get_terminal_size((80, 40));
+        consoleWidth = shutil.get_terminal_size((80, 40))
         pSep = '---'
         if len(filenames) > 0:
             pFiles = f"File: {', '.join(filenames)}"
@@ -399,7 +397,6 @@ class DataframeActions:
         with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', consoleWidth.columns, 'display.max_columns', None):
             print(dataframe)
         print(pSep)
-
 
     def framesToCSV(dataframes, filenames=['stdout'], separator=None, quiet=False):
         _index = 1
@@ -424,6 +421,7 @@ class DataframeActions:
             print(f'Dataframes saved to {filename}')
         if (fFile != sys.stdout.buffer and fFile != sys.stdout.buffer):
             fFile.close()
+
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
@@ -494,8 +492,6 @@ parserFileOptions.add_argument("--split-icolumn", help="split frame along this c
 parserFileOptions.add_argument("--split-column", help="split frame along this column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-irow", help="split frame along this row index ('_columns' splits by columns)", type=str, sticky_default=True, choices=Range(None, None, ['_columns']), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
-
-
 
 parserFileOptions.add_argument("--file", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--pickle", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -791,6 +787,16 @@ defaultPadMargin = False
 
 doneSomething = False
 
+# Default values for the sticky default mode selection arguments
+selectMode = 'all'
+sortMethod = 'mean'
+sortOrder = 'asc'
+insertMethod = 'mean'
+addAt = 'back'
+addMethod = 'mean'
+applyFunction = 'add'
+applyInclusive = True
+
 for input in args.input:
     inputOptions = input['args']
     inputFileNames = input['value']
@@ -825,7 +831,7 @@ for input in args.input:
             if not args.quiet and inputOptions.no_columns:
                 print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
 
-            for _index, (options, frame) in enumerate(masterFrames):
+            for _index, (options, frame) in enumerate(inputFrames):
                 # Restore an set index as first column:
                 if (not isinstance(frame.index, pandas.RangeIndex)):
                     frame.reset_index(inplace=True)
@@ -880,18 +886,10 @@ for input in args.input:
 
             options.filenames = [filename]
             options.frameCount = 1
-            frame = frame.fillna(value=numpy.nan);
+            frame = frame.fillna(value=numpy.nan)
             inputFrames.append((options, frame))
             inputOptions.frameCount += 1
 
-    selectMode = 'all'
-    sortMethod = 'mean'
-    sortOrder = 'asc'
-    insertMethod = 'mean'
-    addAt = 'back'
-    addMethod = 'mean'
-    applyFuntion = 'add'
-    applyInclusive = True
     for (optionName, optionValue) in input['args'].ordered_args:
         multiFrameActions = ['select_mode', 'sort_methiod', 'sort_order', 'add_at', 'add_method', 'apply_function', 'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow']
         if optionName not in multiFrameActions:

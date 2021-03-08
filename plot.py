@@ -412,7 +412,7 @@ class DataframeActions:
                 sep = '\t'
             elif filename.endswith('.csv'):
                 sep = ';'
-            fFile = sys.stdout if filename == 'stdout' else sys.stderr if filename == 'stderr' else xopen.xopen(filename)
+            fFile = sys.stdout if filename == 'stdout' else sys.stderr if filename == 'stderr' else xopen.xopen(filename, 'w')
             frame.to_csv(fFile, sep=sep, na_rep='NaN')
             if (fFile != sys.stdout and fFile != sys.stdout):
                 fFile.close()
@@ -421,7 +421,7 @@ class DataframeActions:
             _index += 1
 
     def framesToPickle(dataframes, filename, quiet=False):
-        fFile = sys.stdout.buffer if filename == 'stdout' else sys.stderr.buffer if filename == 'stderr' else xopen.xopen(filename)
+        fFile = sys.stdout.buffer if filename == 'stdout' else sys.stderr.buffer if filename == 'stderr' else xopen.xopen(filename, 'wb')
         pickle.dump(dataframes, fFile, pickle.HIGHEST_PROTOCOL)
         if not quiet and not fFile == sys.stdout.buffer:
             print(f'Dataframes saved to {filename}')
@@ -841,13 +841,12 @@ for input in args.input:
             else:
                 inputFrames.append((copy.deepcopy(inputOptions), frame))
 
+            if not args.quiet and inputOptions.no_index:
+                print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
             if not args.quiet and inputOptions.no_columns:
                 print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
 
             for _index, (options, frame) in enumerate(inputFrames):
-                # Restore an set index as first column:
-                if (not isinstance(frame.index, pandas.RangeIndex)):
-                    frame.reset_index(inplace=True)
                 options.filenames = [filename]
                 inputFrames[_index] = (options, frame)
         else:

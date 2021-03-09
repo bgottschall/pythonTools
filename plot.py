@@ -1279,6 +1279,7 @@ for input in data:
             markercolour = colour.Color(options.line_colour)
             col = str(frame.columns[colIndex])
             specialColumnCount = len(options.specialColumns)
+            _errors_symmetric = True
             _errors_pos = None
             _errors_neg = None
             _bases = None
@@ -1290,9 +1291,13 @@ for input in data:
                 nextCol = str(frame.columns[nextColIndex])
                 if (nextCol not in options.specialColumns):
                     break
-                if (nextCol == options.special_column_start + 'error' or nextCol == options.special_column_start + 'error+') and (_errors_pos is None):
+                if (nextCol == options.special_column_start + 'error') and (_errors_pos is None):
+                    _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
+                elif (nextCol == options.special_column_start + 'error+') and (_errors_pos is None):
+                    _errors_symmetric = False
                     _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'error-') and (_errors_neg is None):
+                    _errors_symmetric = False
                     _errors_neg = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
                 elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
                     _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
@@ -1374,7 +1379,7 @@ fig.add_trace(go.Scatter(
     error_{'y' if options.horizontal else 'x'}=dict(
         visible={options.show_error},
         type='data',
-        symmetric=True,
+        symmetric={_errors_symmetric},
         array={_errors_pos},
         arrayminus={_errors_neg},
     ),""")
@@ -1415,7 +1420,7 @@ fig.add_trace(go.Bar(
     error_{'x' if options.horizontal else 'y'}=dict(
         visible={options.show_error},
         type='data',
-        symmetric=True,
+        symmetric={_errors_symmetric},
         array={_errors_pos},
         arrayminus={_errors_neg},
     ),""")

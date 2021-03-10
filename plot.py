@@ -273,22 +273,28 @@ class DataframeActions:
         return dataframe
 
     def sortColumns(dataframe, function='mean', order='asc'):
-        sortKey = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), function)(axis=0)
+        sortKey = getattr(dataframe, function)(axis=0)
         sortKey.reset_index(drop=True, inplace=True)
         return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
 
     def sortRows(dataframe, function='mean', order='asc'):
-        sortKey = getattr(dataframe.apply(pandas.to_numeric, errors='coerce'), function)(axis=1)
+        sortKey = getattr(dataframe, function)(axis=1)
         return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
 
     def sortColumnsByRowIdx(dataframe, rowIdx, order='asc'):
-        sortKey = dataframe.iloc[rowIdx].apply(pandas.to_numeric, errors='coerce')
-        sortKey.reset_index(drop=True, inplace=True)
-        return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
+        if rowIdx == 'columns':
+            sortKey = sorted(range(len(dataframe.columns)), key=lambda k: dataframe.columns[k], reverse=(order != 'asc'))
+            return dataframe.iloc[:, sortKey]
+        else:
+            sortKey = dataframe.iloc[int(rowIdx)]
+            sortKey.reset_index(drop=True, inplace=True)
+            return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
 
     def sortRowsByColumnIdx(dataframe, colIdx, order='asc'):
-        sortKey = dataframe.iloc[:, colIdx].apply(pandas.to_numeric, errors='coerce')
-        return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
+        if colIdx == 'index':
+            return dataframe.reindex(dataframe.index.sort_values(ascending=(order == 'asc')))
+        else:
+            return dataframe.reindex(dataframe.iloc[:, int(colIdx)].sort_values(ascending=(order == 'asc')).index)
 
     def addConstant(dataframe, constant):
         return dataframe + constant
@@ -347,13 +353,13 @@ class DataframeActions:
         return pandas.concat([dataframe, newCol], axis=1) if where == 'back' else pandas.concat([newCol, dataframe], axis=1)
 
     def groupByColumnIdx(dataframe, columnIdx, function='sum'):
-        if columnIdx == '_index':
+        if columnIdx == 'index':
             return getattr(dataframe.groupby(dataframe.index, axis=0), function)()
         else:
             return getattr(dataframe.groupby(dataframe.iloc[:, int(columnIdx)], as_index=False, axis=0), function)()
 
     def groupByRowIdx(dataframe, rowIdx, function='sum'):
-        if rowIdx == '_columns':
+        if rowIdx == 'columns':
             return getattr(dataframe.groupby(dataframe.columns, axis=1), function)()
         else:
             return getattr(dataframe.groupby(dataframe.iloc[int(rowIdx), :], axis=0), function)()
@@ -367,7 +373,7 @@ class DataframeActions:
     def splitFramesByRowIdx(dataframes, rowIdx):
         newFrames = []
         for frame in dataframes:
-            if rowIdx == '_columns':
+            if rowIdx == 'columns':
                 for v in frame.columns.unique():
                     columnIdx = DataframeActions.getColumnIdx(frame, v, 'all', False)
                     newFrames.append(DataframeActions.filterColumnsByIdx(frame, columnIdx))
@@ -380,7 +386,7 @@ class DataframeActions:
     def splitFramesByColumnIdx(dataframes, columnIdx):
         newFrames = []
         for frame in dataframes:
-            if columnIdx == '_index':
+            if columnIdx == 'index':
                 for v in frame.index.unique():
                     rowIdx = DataframeActions.getRowIdx(frame, v, 'all', False)
                     newFrames.append(DataframeActions.filterRowsByIdx(frame, rowIdx))
@@ -449,27 +455,32 @@ parserFileOptions.add_argument("--no-columns", help="do not use a column row", d
 parserFileOptions.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 
+parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(None, None), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
 parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='asc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-function", help="sort rows after function or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=int, default=[], sticky_default=True, choices=Range(None, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-irows", help="ignore these row indexes", type=int, default=[], sticky_default=True, choices=Range(None, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-rows", help="ignore these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(None, None), default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
 parserFileOptions.add_argument("--select-irows", help="select these row indexes", type=int, default=[], sticky_default=True, choices=Range(None, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(None, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+
+parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='asc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-function", help="sort rows after function or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-columns", help="sort columns", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-irow", help="sort column after this row index", type=int, default=None, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-irow", help="sort column after this row index", type=str, default=None, choices=Range(None, None, ['columns']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-by-row", help="sort column after this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows", help="sort rows", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this column index", type=int, default=None, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this column index", type=str, default=None, choices=Range(None, None, ['index']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-by-column", help="sort rows after this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
 parserFileOptions.add_argument("--data-scale", help="scales data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--data-offset", help="offsets data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+
 parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-icolumn", help="normalise to this column index", type=int, default=None, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-column", help="normalise to this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -482,9 +493,9 @@ parserFileOptions.add_argument("--add-column", help="add a new column with name"
 parserFileOptions.add_argument("--add-row", help="add a new row with name", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--group-function", help="use this function to compute grouped dataframe", type=str, default='sum', choices=['sum', 'mean', 'median', 'std', 'var', 'sum', 'count', 'skew', 'mad', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--group-by-icolumn", help="group by this column index", type=str, default=0, choices=Range(None, None, ['_index']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--group-by-icolumn", help="group by this column index", type=str, default=0, choices=Range(None, None, ['index']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--group-by-column", help="group by this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--group-by-irow", help="group by this row index", type=str, default=0, choices=Range(None, None, ['_columns']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--group-by-irow", help="group by this row index", type=str, default=0, choices=Range(None, None, ['columns']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--group-by-row", help="group by this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -503,9 +514,9 @@ parserFileOptions.add_argument("--transpose", help="transpose data", default=Fal
 parserFileOptions.add_argument("--print", help="print out each parsed input file", default=False, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--join", help="outer join input files on columns or index", default='none', choices=['none', 'index', 'columns'], sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--split-icolumn", help="split frame along this column index ('_index' splits by index)", type=str, sticky_default=True, choices=Range(None, None, ['_index']), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-icolumn", help="split frame along this column index ('_index' splits by index)", type=str, sticky_default=True, choices=Range(None, None, ['index']), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-column", help="split frame along this column", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--split-irow", help="split frame along this row index ('_columns' splits by columns)", type=str, sticky_default=True, choices=Range(None, None, ['_columns']), default=None, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--split-irow", help="split frame along this row index ('_columns' splits by columns)", type=str, sticky_default=True, choices=Range(None, None, ['columns']), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--focus-frames", help="set the frame focus for file options (default %(default)s)", type=str, default='all', nargs='+', choices=Range(None, None, ['all']), sticky_default=True, action=ChildAction, parent=inputFileArgument)

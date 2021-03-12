@@ -321,6 +321,8 @@ class DataframeActions:
                 dataframe.iloc[rowIdx, :] = getattr(dataframe.iloc[rowIdx, :], function)()
             elif function in functionMap:
                 dataframe.iloc[rowIdx, :] = functionMap[function]
+            elif function == 'set':
+                dataframe = dataframe.apply(lambda _: dataframe.iloc[rowIdx, :], axis=1)
             else:
                 applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
                 dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
@@ -335,6 +337,8 @@ class DataframeActions:
                 dataframe.iloc[:, columnIdx] = getattr(dataframe.iloc[:, columnIdx], function)()
             elif function in functionMap:
                 dataframe.iloc[:, columnIdx] = functionMap[function]
+            elif function == 'set':
+                dataframe = dataframe.apply(lambda _: dataframe.iloc[:, colIdx], axis=1)
             else:
                 applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
                 dataframe = dataframe.apply(lambda col: getattr(col, function)(applyColumn), axis=0)
@@ -404,7 +408,7 @@ class DataframeActions:
                     newFrames.append(frame[frame.iloc[:, columnIdx] == v])
         return newFrames
 
-    def printFrames(filenames, dataframe, frameIndex, frameCount):
+    def printFrames(filenames, dataframe, frameIndex, frameCount, precision=None):
         if not isinstance(filenames, list):
             filenames = [filenames]
         consoleWidth = shutil.get_terminal_size((80, 40))
@@ -416,11 +420,11 @@ class DataframeActions:
         if len(filenames) > 0:
             print(textwrap.fill(pFiles, width=consoleWidth.columns, subsequent_indent=' '))
         print(pSep)
-        with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', consoleWidth.columns, 'display.max_columns', None):
+        with pandas.option_context('display.max_rows', None, 'display.max_columns', None, 'display.width', consoleWidth.columns, 'display.max_columns', None, 'display.float_format', None if precision is None else f'{{:.{precision}f}}'.format):
             print(dataframe)
         print(pSep)
 
-    def framesToCSV(dataframes, filenames=['stdout'], separator=None, quiet=False):
+    def framesToCSV(dataframes, filenames=['stdout'], separator=None, quiet=False, precision=None):
         _index = 1
         for (frame, filename) in zip(dataframes, filenames):
             sep = ';' if separator is None else separator
@@ -429,7 +433,7 @@ class DataframeActions:
             elif filename.endswith('.csv'):
                 sep = ';'
             fFile = sys.stdout if filename == 'stdout' else sys.stderr if filename == 'stderr' else xopen.xopen(filename, 'w')
-            frame.to_csv(fFile, sep=sep, na_rep='NaN')
+            frame.to_csv(fFile, sep=sep, na_rep='NaN', float_format=None if precision is None else f'%.{precision}f')
             if (fFile != sys.stdout and fFile != sys.stdout):
                 fFile.close()
             if not quiet and not fFile == sys.stdout:
@@ -447,7 +451,10 @@ class DataframeActions:
 
 considerAsNaN = ['nan', 'none', 'null', 'zero', 'nodata', '']
 detectDelimiter = ['\t', ';', ' ', ',']
-specialColumns = ['error', 'error-', 'error+', 'offset', 'label', 'colour']
+
+traceSpecialColumns = ['error', 'error-', 'error+', 'offset', 'label', 'colour']
+frameSpecialColumns = ['category']
+allSpecialColumns = traceSpecialColumns + frameSpecialColumns
 
 parser = argparse.ArgumentParser(description="Visualize your data the easy way")
 # Global Arguments
@@ -510,7 +517,7 @@ parserFileOptions.add_argument("--group-by-row", help="group by this row", type=
 
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-mode", help="convert all values to absolute values", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -530,7 +537,9 @@ parserFileOptions.add_argument("--split-irow", help="split frame along this row 
 parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--focus-frames", help="set the frame focus for file options (default %(default)s)", type=str, default='all', nargs='+', choices=Range(None, None, ['all']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--defocus-frames", help="remove frames from focus for file options", type=int, default=None, nargs='+', choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
+parserFileOptions.add_argument("--output-precision", help="set explicit output prevision for text and console output (default %(default)s)", type=str, default='default', choices=Range(0, None, ['default']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--file", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--pickle", help="pickle data frames to file (one file containing all frames)", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
@@ -716,7 +725,9 @@ for input in args.input:
     options = input['args']
     options.ignore_icolumns = list(set(options.ignore_icolumns))
     options.ignore_columns = list(set(options.ignore_columns))
-    options.specialColumns = [options.special_column_start + x for x in specialColumns]
+
+    options.traceSpecialColumns = [options.special_column_start + x for x in traceSpecialColumns]
+    options.frameSpecialColumns = [options.special_column_start + x for x in frameSpecialColumns]
 
     if (options.opacity == 'auto' and ((options.plot == 'box' and 'overlay' in args.box_mode) or
                                        (options.plot == 'violin' and 'overlay' in args.violin_mode) or
@@ -936,10 +947,12 @@ for input in args.input:
     groupFunction = input['args'].group_function
     applyInclusive = input['args'].apply_mode == 'inclusive'
     sortOrder = input['args'].sort_order
+    outputPrecision = None if input['args'].output_precision == 'default' else int(input['args'].output_precision)
 
-    focusedFrames = range(len(inputFrames))
+    focusedFrames = list(range(len(inputFrames)))
     for (optionName, optionValue) in input['args'].ordered_args:
-        multiFrameActions = ['select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function', 'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames']
+        multiFrameActions = ['output_precision', 'select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
+                             'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if (_index) not in focusedFrames:
@@ -1058,14 +1071,14 @@ for input in args.input:
                 elif optionName == 'drop_any_nan':
                     frame = DataframeActions.dropNaN(frame, True)
                 elif optionName == 'print':
-                    DataframeActions.printFrames(frameOptions.filenames, frame, _index, len(inputFrames))
+                    DataframeActions.printFrames(frameOptions.filenames, frame, _index, len(inputFrames), outputPrecision)
                     doneSomething = True
 
                 inputFrames[_index] = (frameOptions, frame)
         else:
             if optionName == 'focus_frames':
                 if 'all' in optionValue:
-                    focusedFrames = range(len(inputFrames))
+                    focusedFrames = list(range(len(inputFrames)))
                 else:
                     focusedFrames = []
                     for _index in [int(x) for x in optionValue]:
@@ -1076,6 +1089,13 @@ for input in args.input:
                             else:
                                 raise Exception(f"frame index {_index} out of bounds")
                     focusedFrames = sorted(focusedFrames)
+            elif optionName == 'defocus_frames':
+                for _index in optionValue:
+                    nindex = _index if _index >= 0 else _index + len(inputFrames)
+                    if nindex in focusedFrames:
+                        focusedFrames.remove(nindex)
+            elif optionName == 'output_precision':
+                outputPrecision = None if optionValue == 'default' else int(optionValue)
             elif optionName == 'select_mode':
                 selectMode = optionValue
             elif optionName == 'sort_function':
@@ -1096,12 +1116,13 @@ for input in args.input:
                 newOptions = copy.deepcopy(inputOptions)
                 newOptions.filenames = []
                 newOptions.frameCount = 1
-                defocusedFrames = [inputFrames[x] for x in range(len(inputFrames)) if x not in focusedFrames]
+                frontDefocusedFrames = [inputFrames[x] for x in range(focusedFrames[0]) if x not in focusedFrames]
+                backDefocusedFrames = [inputFrames[x] for x in range(focusedFrames[0], len(inputFrames)) if x not in focusedFrames]
                 joinedFrame = DataframeActions.joinFrames([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue)
-                inputFrames = [(newOptions, joinedFrame)] + defocusedFrames
-                focusedFrames = [0]
+                inputFrames = frontDefocusedFrames + [(newOptions, joinedFrame)] + backDefocusedFrames
+                focusedFrames = [len(frontDefocusedFrames)]
             elif optionName == 'file':
-                DataframeActions.framesToCSV([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, inputOptions.separator, args.quiet)
+                DataframeActions.framesToCSV([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, inputOptions.separator, args.quiet, outputPrecision)
                 doneSomething = True
             elif optionName == 'pickle':
                 DataframeActions.framesToPickle([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, args.quiet)
@@ -1141,7 +1162,7 @@ for input in args.input:
     inputOptions.frameCount = 0
     for _index, (options, frame) in enumerate(inputFrames):
         inputOptions.frameCount += 1
-        inputOptions.traceCount += len([x for x in frame.columns if not str(x) in inputOptions.specialColumns])
+        inputOptions.traceCount += len([x for x in frame.columns if str(x) not in inputOptions.traceSpecialColumns and str(x) not in inputOptions.frameSpecialColumns])
         frame = frame.replace([numpy.inf, -numpy.inf], numpy.nan)
         frame = frame.where(pandas.notnull(frame), None)
         inputFrames[_index] = (options, frame)
@@ -1325,25 +1346,35 @@ for input in data:
 
         frameTraceIndex = 0
 
+        _categories = None
+        for specialFrameColumn in options.frameSpecialColumns:
+            if specialFrameColumn not in frame.columns:
+                continue
+            for colIndex in range(len(frame.columns)):
+                colName = str(frame.columns[colIndex])
+                if (colName == options.special_column_start + 'category') and _categories is None:
+                    _categories = frame.iloc[:, colIndex].values.tolist()
+
         for colIndex, _ in enumerate(frame.columns):
+            col = str(frame.columns[colIndex])
+            if col in options.traceSpecialColumns or col in options.frameSpecialColumns:
+                continue
+
             if options.trace_colours and frameTraceIndex < len(options.trace_colours):
                 fillcolour = options.trace_colours[frameTraceIndex]
             else:
                 fillcolour = colours[colourIndex % len(colours)]
             markercolour = colour.Color(options.line_colour)
-            col = str(frame.columns[colIndex])
-            specialColumnCount = len(options.specialColumns)
+
             _errors_symmetric = True
             _errors_pos = None
             _errors_neg = None
             _bases = None
             _labels = None
             _colours = None
-            if (col in options.specialColumns):
-                continue
-            for nextColIndex in range(colIndex + 1, colIndex + 1 + specialColumnCount if colIndex + 1 + specialColumnCount <= len(frame.columns) else len(frame.columns)):
+            for nextColIndex in range(colIndex + 1, colIndex + 1 + len(options.traceSpecialColumns) if colIndex + 1 + len(options.traceSpecialColumns) <= len(frame.columns) else len(frame.columns)):
                 nextCol = str(frame.columns[nextColIndex])
-                if (nextCol not in options.specialColumns):
+                if (nextCol not in options.traceSpecialColumns):
                     break
                 if (nextCol == options.special_column_start + 'error') and (_errors_pos is None):
                     _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
@@ -1378,6 +1409,11 @@ for input in data:
                     updateRange(plotRange, [rxdata, rydata])
                 else:
                     updateRange(plotRange, [xdata, ydata])
+                if _categories is not None:
+                    if options.horizontal:
+                        ydata = [_categories, ydata]
+                    else:
+                        xdata = [_categories, xdata]
             else:  # Box and Violin
                 data = [x for x in frame.iloc[:, colIndex].values.tolist() if x is not None]
                 index = f"['{col}'] * {len(data)}"
@@ -1582,8 +1618,8 @@ fig.add_trace(go.Violin(
     plotScript.write("# Subplot specific options:\n")
     plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"# fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"# fig.update_xaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
     plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if not options.x_hide else ''}fig.update_xaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col})\n")
     plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")

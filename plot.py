@@ -196,7 +196,7 @@ class DataframeActions:
     def dropColumnsByIdx(dataframe, columns):
         if not isinstance(columns, list):
             columns = [columns]
-        columns = [x if x >= 0 else dataframe.shape[1] - x for x in columns]
+        columns = [x if x >= 0 else x + dataframe.shape[1] for x in columns]
         filterColumns = numpy.array([False if i in columns else True for i in range(dataframe.shape[1])])
         return dataframe.loc[:, filterColumns]
 
@@ -210,7 +210,7 @@ class DataframeActions:
     def dropRowsByIdx(dataframe, rows):
         if not isinstance(rows, list):
             rows = [rows]
-        rows = [x if x >= 0 else dataframe.shape[0] - x for x in rows]
+        rows = [x if x >= 0 else x + dataframe.shape[0] for x in rows]
         filterRows = numpy.array([False if i in rows else True for i in range(dataframe.shape[0])])
         return dataframe.iloc[filterRows, :]
 
@@ -281,6 +281,12 @@ class DataframeActions:
         sortKey = getattr(dataframe, function)(axis=1)
         return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
 
+    def reverseColumns(dataframe):
+        return dataframe.iloc[::, ::-1]
+
+    def reverseRows(dataframe):
+        return dataframe.iloc[::-1]
+
     def sortColumnsByRowIdx(dataframe, rowIdx, order='asc'):
         if rowIdx == 'columns':
             sortKey = sorted(range(len(dataframe.columns)), key=lambda k: dataframe.columns[k], reverse=(order != 'asc'))
@@ -309,30 +315,32 @@ class DataframeActions:
         return dataframe.abs()
 
     def applyOnRowIdx(dataframe, rowIdx, function='abs', inclusive=True):
-        functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
-        if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
-            dataframe.iloc[rowIdx, :] = getattr(dataframe.iloc[rowIdx, :], function)()
-        elif function in functionMap:
-            dataframe.iloc[rowIdx, :] = functionMap[function]
-        else:
-            applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
-            dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
-            if not inclusive:
-                dataframe.iloc[rowIdx, :] = applyRow
-        return dataframe
+        with pandas.option_context('mode.chained_assignment', None):
+            functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
+            if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
+                dataframe.iloc[rowIdx, :] = getattr(dataframe.iloc[rowIdx, :], function)()
+            elif function in functionMap:
+                dataframe.iloc[rowIdx, :] = functionMap[function]
+            else:
+                applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
+                dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
+                if not inclusive:
+                    dataframe.iloc[rowIdx, :] = applyRow
+            return dataframe
 
     def applyOnColumnIdx(dataframe, columnIdx, function='abs', inclusive=True):
-        functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
-        if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
-            dataframe.iloc[:, columnIdx] = getattr(dataframe.iloc[:, columnIdx], function)()
-        elif function in functionMap:
-            dataframe.iloc[:, columnIdx] = functionMap[function]
-        else:
-            applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
-            dataframe = dataframe.apply(lambda col: getattr(col, function)(applyColumn), axis=0)
-            if not inclusive:
-                dataframe.iloc[:, columnIdx] = applyColumn
-        return dataframe
+        with pandas.option_context('mode.chained_assignment', None):
+            functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
+            if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
+                dataframe.iloc[:, columnIdx] = getattr(dataframe.iloc[:, columnIdx], function)()
+            elif function in functionMap:
+                dataframe.iloc[:, columnIdx] = functionMap[function]
+            else:
+                applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+                dataframe = dataframe.apply(lambda col: getattr(col, function)(applyColumn), axis=0)
+                if not inclusive:
+                    dataframe.iloc[:, columnIdx] = applyColumn
+            return dataframe
 
     def addRow(dataframe, name, function='mean', where='back'):
         if function in ['nan', 'zero', 'one']:
@@ -477,6 +485,8 @@ parserFileOptions.add_argument("--sort-by-row", help="sort column after this row
 parserFileOptions.add_argument("--sort-rows", help="sort rows", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this column index", type=str, default=None, choices=Range(None, None, ['index']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-by-column", help="sort rows after this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--reverse-columns", help="reverse columns order", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--reverse-rows", help="reverse row order", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--data-scale", help="scales data (default %(default)s)", type=float, default=1, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--data-offset", help="offsets data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -501,10 +511,10 @@ parserFileOptions.add_argument("--group-by-row", help="group by this row", type=
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-mode", help="convert all values to absolute values", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-icolumn", help="compute function on dataframe/column index", type=int, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-column", help="compute function on dataframe/column index", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-irow", help="compute function an dataframe/row index", type=int, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-row", help="compute function an dataframe/row index", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-rows", help="compute function on multiple rows", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -541,7 +551,7 @@ parserPlotOptions.add_argument("--trace-colours", help="define explicit trace co
 parserPlotOptions.add_argument("--line-width", help="set line width (default %(default)s)", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", choices=Range(0, 1, ['auto']), action=ChildAction, parent=inputFileArgument)
-
+parserPlotOptions.add_argument("--offsetgroups", help="set explicit offsetgroups for e.g. bar charts", type=int, default='auto', nargs='+', choices=Range(0, None, ['auto']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserLinePlotOptions = parser.add_argument_group('line plot options')
 parserLinePlotOptions.add_argument("--line-mode", choices=['none', 'lines', 'markers', 'text', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode (default %(default)s)", default='lines', action=ChildAction, parent=inputFileArgument)
@@ -579,40 +589,43 @@ parserBoxPlotOptions.add_argument("--box-group-gap", help="gap between box group
 
 parserPlotAxisOptions = parser.add_argument_group('plot axis options')
 parserPlotAxisOptions.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-title", help="x-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-title", help="y-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-type", help="choose type for x-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-title", help="x-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-type", help="choose type for y-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-type", help="choose type for x-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-range-mode", help="choose range mode for y-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-hide", help="hide x-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-range-mode", help="choose range mode for x-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-range-from", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-range-mode", help="choose range mode for y-axis (default %(default)s)", choices=['normal', 'tozero', 'nonnegative'], default='normal', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-range-from", help="y-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-range-to", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-range-from", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-range-to", help="y-axis end (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-range-to", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tick-suffix", help="add suffix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick-prefix", help="add prefix to y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-ticks", help="how to draw x ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tick-prefix", help="add prefix to x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-ticks", help="how to draw y ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tickmode", help="tick mode x-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-ticks", help="how to draw x ticks (default '%(default)s')", choices=['', 'inside', 'outside'], default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tickmode", help="tick mode y-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-nticks", help="number of ticks on x-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tickmode", help="tick mode x-axis (default '%(default)s')", choices=['auto', 'linear', 'array'], default='auto', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-nticks", help="number of ticks on y-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tick0", help="first tick on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-nticks", help="number of ticks on x-axis (only tick mode auto) (default %(default)s)", choices=Range(0,), default=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick0", help="first tick on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-dtick", help="tick step on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tick0", help="first tick on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-dtick", help="tick step on y-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tickvals", help="tick values on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-dtick", help="tick step on x-axis (only tick mode linear) (default %(default)s)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tickvals", help="tick values on y-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-ticktext", help="tick text on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tickvals", help="tick values on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-ticktext", help="tick text on y-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserPlotAxisOptions.add_argument("--x-tickangle", help="tick angle on x-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-ticktext", help="tick text on x-axis (only tick mode array) (default %(default)s)", default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tickangle", help="tick angle on y-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tickangle", help="tick angle on x-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--y-grid-colour", help="set y-grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-grid-colour", help="set x-grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--grid-colour", help="set grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserColourOptions = parser.add_argument_group('colour options')
 parserColourOptions.add_argument("--theme", help="theme to use (colour options only apply to 'gradient')", default='gradient', choices=["gradient", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
@@ -729,6 +742,8 @@ for input in args.input:
         options.show_error = False
     options.hide_error = not options.show_error
 
+    options.y_grid_colour = f"'{options.y_grid_colour}'" if options.y_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
+    options.x_grid_colour = f"'{options.x_grid_colour}'" if options.x_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
     options.y_range_from = None if options.y_range_from == 'auto' else float(options.y_range_from)
     options.x_range_from = None if options.x_range_from == 'auto' else float(options.x_range_from)
     options.y_range_to = None if options.y_range_to == 'auto' else float(options.y_range_to)
@@ -819,14 +834,6 @@ defaultPadMargin = False
 doneSomething = False
 
 # Default values for the sticky default mode selection arguments
-selectMode = 'all'
-sortFunction = 'mean'
-sortOrder = 'asc'
-addAt = 'back'
-addFunction = 'mean'
-applyFunction = 'add'
-groupFunction = 'sum'
-applyInclusive = True
 
 for input in args.input:
     inputOptions = input['args']
@@ -921,9 +928,18 @@ for input in args.input:
             inputFrames.append((options, frame))
             inputOptions.frameCount += 1
 
+    selectMode = input['args'].select_mode
+    sortFunction = input['args'].sort_function
+    addAt = input['args'].add_at
+    addFunction = input['args'].add_function
+    applyFunction = input['args'].apply_function
+    groupFunction = input['args'].group_function
+    applyInclusive = input['args'].apply_mode == 'inclusive'
+    sortOrder = input['args'].sort_order
+
     focusedFrames = range(len(inputFrames))
     for (optionName, optionValue) in input['args'].ordered_args:
-        multiFrameActions = ['select_mode', 'sort_methiod', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function', 'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames']
+        multiFrameActions = ['select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function', 'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if (_index) not in focusedFrames:
@@ -955,6 +971,10 @@ for input in args.input:
                     frame = DataframeActions.filterRowsByIdx(frame, rowIdx)
                 elif optionName == 'select_irows':
                     frame = DataframeActions.filterRowsByIdx(frame, optionValue)
+                elif optionName == 'reverse_columns':
+                    frame = DataframeActions.reverseColumns(frame)
+                elif optionName == 'reverse_rows':
+                    frame = DataframeActions.reverseRows(frame)
                 elif optionName == 'sort_columns':
                     frame = DataframeActions.sortColumns(frame, sortFunction, sortOrder)
                 elif optionName == 'sort_rows':
@@ -993,6 +1013,24 @@ for input in args.input:
                 elif optionName == 'apply_column':
                     columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
                     frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive)
+                elif optionName == 'apply_irows':
+                    if 'all' in optionValue:
+                        optionValue = range(frame.shape[0])
+                    for rowIdx in optionValue:
+                        frame = DataframeActions.applyOnRowIdx(frame, int(rowIdx), applyFunction, applyInclusive)
+                elif optionName == 'apply_rows':
+                    for rowName in optionValue:
+                        rowIdx = DataframeActions.getRowIdx(frame, rowName, selectMode)[0]
+                        frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive)
+                elif optionName == 'apply_icolumns':
+                    if 'all' in optionValue:
+                        optionValue = range(frame.shape[1])
+                    for colIdx in optionValue:
+                        frame = DataframeActions.applyOnColumnIdx(frame, int(colIdx), applyFunction, applyInclusive)
+                elif optionName == 'apply_columns':
+                    for colName in optionValue:
+                        columnIdx = DataframeActions.getColumnIdx(frame, colName, selectMode)[0]
+                        frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive)
                 elif optionName == 'group_by_irow':
                     frame = DataframeActions.groupByRowIdx(frame, optionValue, groupFunction)
                 elif optionName == 'group_by_row':
@@ -1150,6 +1188,11 @@ if doneSomething and not args.browser and len(args.output) == 0 and not args.scr
     exit(0)
 elif len(args.output) == 0 and not args.script:
     args.browser = True
+
+if totalTraceCount == 0:
+    if not args.quiet:
+        print('No input data available for plotting.')
+    exit(0)
 
 # Plotting script will be executed in this path context
 if args.script:
@@ -1342,6 +1385,14 @@ for input in data:
                 xdata = index if options.vertical else data
                 updateRange(plotRange, [xdata, ydata])
 
+            if options.offsetgroups == 'auto':
+                offsetgroup = (0 if (uniqueBarMode) else options.subplotTraceIndex) + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None
+            else:
+                if inputTraceIndex < len(options.offsetgroups):
+                    offsetgroup = options.offsetgroups[inputTraceIndex]
+                else:
+                    offsetgroup = options.offsetgroups[-1]
+
             traceName = col
 
             if (inputTraceIndex < len(options.trace_names)):
@@ -1416,7 +1467,7 @@ fig.add_trace(go.Bar(
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
-    offsetgroup={(0 if (uniqueBarMode) else options.subplotTraceIndex) + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None},
+    offsetgroup={offsetgroup},
     y={ydata},
     x={xdata},""")
                 if (_labels is not None):
@@ -1531,7 +1582,8 @@ fig.add_trace(go.Violin(
     plotScript.write("# Subplot specific options:\n")
     plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0,0,0,0)', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"# fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"# fig.update_xaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
     plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if not options.x_hide else ''}fig.update_xaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col})\n")
     plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")

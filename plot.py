@@ -634,6 +634,10 @@ parserPlotAxisOptions.add_argument("--y-tickangle", help="tick angle on y-axis (
 parserPlotAxisOptions.add_argument("--x-tickangle", help="tick angle on x-axis (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-grid-colour", help="set y-grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--x-grid-colour", help="set x-grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--y-colour", help="set y-axis colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-colour", help="set x-axis colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--y-line-width", help="set y-axis line width (default %(default)s)", type=float, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-line-width", help="set x-axis line width (default %(default)s)", type=float, choices=Range(0, None), default=0, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--grid-colour", help="set grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserColourOptions = parser.add_argument_group('colour options')
@@ -755,6 +759,11 @@ for input in args.input:
 
     options.y_grid_colour = f"'{options.y_grid_colour}'" if options.y_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
     options.x_grid_colour = f"'{options.x_grid_colour}'" if options.x_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
+    options.x_colour = f"'{options.y_colour}'" if options.y_colour is not None else None
+    options.y_colour = f"'{options.x_colour}'" if options.x_colour is not None else None
+    options.y_line_width_forced = 'y_line_width' in [i for (i, _) in options.ordered_args]
+    options.x_line_width_forced = 'x_line_width' in [i for (i, _) in options.ordered_args]
+
     options.y_range_from = None if options.y_range_from == 'auto' else float(options.y_range_from)
     options.x_range_from = None if options.x_range_from == 'auto' else float(options.x_range_from)
     options.y_range_to = None if options.y_range_to == 'auto' else float(options.y_range_to)
@@ -950,6 +959,7 @@ for input in args.input:
     outputPrecision = None if input['args'].output_precision == 'default' else int(input['args'].output_precision)
 
     focusedFrames = list(range(len(inputFrames)))
+
     for (optionName, optionValue) in input['args'].ordered_args:
         multiFrameActions = ['output_precision', 'select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
                              'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
@@ -1338,6 +1348,7 @@ for input in data:
     plotRange = []
     inputTraceIndex = 0
     inputFrameIndex = 0
+    multiCategory = False
     for frame in frames:
         # NaN cannot be plotted or used, cast it to None
         # Drop only columns/rows NaN values and replace NaN with None
@@ -1410,6 +1421,7 @@ for input in data:
                 else:
                     updateRange(plotRange, [xdata, ydata])
                 if _categories is not None:
+                    multiCategory = True
                     if options.horizontal:
                         ydata = [_categories, ydata]
                     else:
@@ -1614,20 +1626,27 @@ fig.add_trace(go.Violin(
     if defaultBottomMargin is None and options.row + options.rowspan - 1 == subplotGrid[1]['max'] and options.x_title is not None:
         defaultBottomMargin = True
 
+    # If line width was not explicitly set, set the axis line width for the multi category axis to one
+    if multiCategory and options.horizontal and not options.y_line_width_forced:
+        options.y_line_width = 1
+    if multiCategory and options.vertical and not options.x_line_width_forced:
+        options.x_line_width = 1
+
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")
     plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"fig.update_xaxes(showline=False, linewidth=0, linecolor='rgba(0, 0, 0, 0)', gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(showline={options.y_line_width > 0}, linewidth={options.y_line_width}, linecolor={options.y_colour}, gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(showline={options.x_line_width > 0}, linewidth={options.x_line_width}, linecolor={options.x_colour}, gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
+    plotScript.write("# Multi-category options:\n")
+    plotScript.write(f"fig.update_yaxes(showdividers={options.y_line_width > 0}, dividercolor={options.y_colour}, dividerwidth={options.y_line_width}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(showdividers={options.x_line_width > 0}, dividercolor={options.x_colour}, dividerwidth={options.y_line_width}, col={options.col}, row={options.row})\n")
     plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if not options.x_hide else ''}fig.update_xaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col})\n")
     plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if options.x_title is None else ''}fig.update_xaxes(title_text='{options.x_title}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_yaxes(tickformat='{options.y_tick_format}', ticksuffix='{options.y_tick_suffix}', tickprefix='{options.y_tick_prefix}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"fig.update_xaxes(tickformat='{options.x_tick_format}', ticksuffix='{options.x_tick_suffix}', tickprefix='{options.x_tick_prefix}', col={options.col}, row={options.row})\n")
-    plotScript.write(f"# fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"# fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='lightgrey', col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(tickcolor={options.y_colour}, tickformat='{options.y_tick_format}', ticksuffix='{options.y_tick_suffix}', tickprefix='{options.y_tick_prefix}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(tickcolor={options.x_colour}, tickformat='{options.x_tick_format}', ticksuffix='{options.x_tick_suffix}', tickprefix='{options.x_tick_prefix}', col={options.col}, row={options.row})\n")
     if options.y_range_from is not None or options.y_range_to is not None:
         options.y_range_from = options.y_range_from if options.y_range_from is not None else plotRange[1]['min']
         options.y_range_to = options.y_range_to if options.y_range_to is not None else plotRange[1]['max']
@@ -1637,7 +1656,7 @@ fig.add_trace(go.Violin(
         options.x_range_to = options.x_range_to if options.x_range_to is not None else plotRange[0]['max']
         plotScript.write(f"fig.update_xaxes(range=[{options.x_range_from}, {options.x_range_to}], col={options.col}, row={options.row})\n")
     plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row})\n")
     plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, tickangle={options.x_tickangle}, col={options.col}, row={options.row})\n")
     plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, tickangle={options.y_tickangle}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write("\n")

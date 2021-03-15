@@ -3,6 +3,7 @@
 from argparse import ArgumentParser
 import numpy
 import re
+import math
 from scipy import stats
 
 
@@ -10,7 +11,9 @@ def isFloat(val):
     if val is None:
         return False
     try:
-        float(val)
+        val = float(val)
+        if math.isnan(val):
+            return False
         return True
     except ValueError:
         return False
@@ -36,6 +39,9 @@ props = {
     'q2':         {'label': 'Q2',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 50)},
     'q3':         {'label': 'Q3',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 75)},
     'p%':         {'label': 'P%',        'secondary': False, 'argument': True,  'func': lambda l1, l2, arg: numpy.percentile(l1, float(arg))},
+    'hmean':      {'label': 'HMean',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.hmean(l1)},
+    'gmean':      {'label': 'GMean',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.mstats.gmean(l1)},
+    'mean':       {'label': 'Mean',      'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
     'avg':        {'label': 'Avg',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
     'std':        {'label': 'σ',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
     'var':        {'label': 'σ²',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},

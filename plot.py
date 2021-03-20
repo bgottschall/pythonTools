@@ -27,7 +27,6 @@ import pandas
 import numpy
 import os
 import re
-import colour
 import subprocess
 import statistics
 import sys
@@ -36,6 +35,7 @@ import copy
 import textwrap
 import shutil
 import xopen
+import seaborn
 
 
 def isFloat(val):
@@ -556,9 +556,9 @@ parserPlotOptions.add_argument('--colspan', type=int, choices=Range(1, None), he
 
 parserPlotOptions.add_argument("--error", help="show error markers in plot (need to be supplied by data)", default='hide', choices=['show', 'hide'], action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--trace-names", help="set individual trace names", default=[], sticky_default=True, type=str, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserPlotOptions.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=colour.Color, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotOptions.add_argument("--trace-colours", help="define explicit trace colours", default=[], nargs='+', type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--line-width", help="set line width (default %(default)s)", type=int, default=1, choices=Range(0,), action=ChildAction, parent=inputFileArgument)
-parserPlotOptions.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=colour.Color, default=colour.Color('#222222'), action=ChildAction, parent=inputFileArgument)
+parserPlotOptions.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=str, default='#222222', action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", choices=Range(0, 1, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--offsetgroups", help="set explicit offsetgroups for e.g. bar charts", type=int, default='auto', nargs='+', choices=Range(0, None, ['auto']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
@@ -641,15 +641,14 @@ parserPlotAxisOptions.add_argument("--x-line-width", help="set x-axis line width
 parserPlotAxisOptions.add_argument("--grid-colour", help="set grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserColourOptions = parser.add_argument_group('colour options')
-parserColourOptions.add_argument("--theme", help="theme to use (colour options only apply to 'gradient')", default='gradient', choices=["gradient", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
-parserColourOptions.add_argument("-c", "--colours", help="define explicit colours (no gradient)", default=[], nargs='+', type=colour.Color)
-parserColourOptions.add_argument("--colour-from", help="colour gradient start (default %(default)s)", default=colour.Color("#022752"), type=colour.Color)
-parserColourOptions.add_argument("--colour-to", help="colour gradient end (default %(default)s)", default=colour.Color("#CCD9FB"), type=colour.Color)
-parserColourOptions.add_argument("--colour-count", help="colours to use from gradient (overrides per trace, frame and input colours)", type=int, choices=Range(1,), default=None)
+parserColourOptions.add_argument("--theme", help="theme to use (colour options only apply to 'palette')", default='palette', choices=["palette", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
+parserColourOptions.add_argument("-c", "--colours", help="define explicit colours (no palette)", default=[], nargs='+', type=str)
+parserColourOptions.add_argument("--colour-palette", help="valid seaborn colour palette (default %(default)s)",type=str, default='ch:s=0.2,rot=-0.3,d=0.9,l=0.1')
+parserColourOptions.add_argument("--colour-count", help="set the number of colours to generate from palette", type=int, choices=Range(1,), default=None)
 parserColourOptions.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
 parserColourOptions.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
 parserColourOptions.add_argument("--per-input-colours", help="one colour for each input file", action='store_true', default=False)
-parserColourOptions.add_argument("--font-colour", help="font colour (default %(default)s)", type=colour.Color, default=colour.Color('#000000'))
+parserColourOptions.add_argument("--font-colour", help="font colour (default %(default)s)", type=str, default='#000000')
 parserColourOptions.add_argument("--background-colour", help="set background colour  (default 'rgba(255, 255, 255, 0)')", type=str, default=None)
 
 parserPlotGlobalOptions = parser.add_argument_group('plot global options')
@@ -698,7 +697,7 @@ commentColour = ''
 commentBackgroundColour = ''
 uniqueBarMode = False
 
-if args.theme == 'gradient':
+if args.theme == 'palette':
     args.theme = 'plotly_white'
 else:
     # We have chosen a theme, so just comment all colour settings out
@@ -1239,7 +1238,11 @@ for i, p in enumerate(args.output):
 
 # Building up the colour array
 requiredColours = args.colour_count if args.colour_count is not None else totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
-colours = args.colours if args.colours else list(args.colour_from.range_to(args.colour_to, requiredColours))
+if args.colours:
+    colours = args.colours
+else:
+    colours = seaborn.color_palette(args.colour_palette, requiredColours)
+    colours = [f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r,g,b) in colours]
 colourIndex = 0
 
 legendEntries = []
@@ -1294,7 +1297,7 @@ import platform
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
-parser.add_argument("--font-colour", help="font colour (default %(default)s)", default='{args.font_colour.hex}')
+parser.add_argument("--font-colour", help="font colour (default %(default)s)", default='{args.font_colour}')
 parser.add_argument("--font-family", help="font family (default %(default)s)", default='{args.font_family}')
 parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
@@ -1364,7 +1367,7 @@ for input in data:
             for colIndex in range(len(frame.columns)):
                 colName = str(frame.columns[colIndex])
                 if (colName == options.special_column_start + 'category') and _categories is None:
-                    _categories = frame.iloc[:, colIndex].values.tolist()
+                    _categories = ['' if x is None else x for x in frame.iloc[:, colIndex].values.tolist()]
 
         for colIndex, _ in enumerate(frame.columns):
             col = str(frame.columns[colIndex])
@@ -1375,7 +1378,7 @@ for input in data:
                 fillcolour = options.trace_colours[frameTraceIndex]
             else:
                 fillcolour = colours[colourIndex % len(colours)]
-            markercolour = colour.Color(options.line_colour)
+            markercolour = options.line_colour
 
             _errors_symmetric = True
             _errors_pos = None
@@ -1401,7 +1404,7 @@ for input in data:
                     _labels = frame.iloc[:, nextColIndex].values.tolist()
                 elif (nextCol == options.special_column_start + 'colour') and (_colours is None) and (frameTraceIndex >= len(options.trace_colours)):
                     _colours = frame.iloc[:, nextColIndex].values.tolist()
-                    _colours = [c if c is not None else fillcolour.hex for c in _colours]
+                    _colours = [c if c is not None else fillcolour for c in _colours]
 
             if (options.plot == 'line'):
                 ydata = frame.iloc[:, colIndex].values.tolist() if not options.vertical else list(frame.index)
@@ -1467,10 +1470,10 @@ fig.add_trace(go.Scatter(
     marker_color={_colours},""")
                 else:
                     plotScript.write(f"""
-{commentColour}    marker_color='{fillcolour.hex}',""")
+{commentColour}    marker_color='{fillcolour}',""")
                 plotScript.write(f"""
-{commentColour}    line_color='{fillcolour.hex}',
-{commentColour}    fillcolor='rgba({fillcolour.red}, {fillcolour.green}, {fillcolour.blue}, 0.5)', # Currently not supported through script, using default
+{commentColour}    line_color='{fillcolour}',
+{commentColour}    fillcolor='{fillcolour}', # Currently not supported through script, using default
     stackgroup='{'stackgroup-' + str(inputIndex) if options.line_stack else ''}',
     marker_symbol='{lineMarker}',
     marker_size={options.line_marker_size},
@@ -1509,9 +1512,9 @@ fig.add_trace(go.Bar(
     marker_color={_colours},""")
                 else:
                     plotScript.write(f"""
-{commentColour}    marker_color='{fillcolour.hex}',""")
+{commentColour}    marker_color='{fillcolour}',""")
                 plotScript.write(f"""
-{commentColour}    marker_line_color='{markercolour.hex}',
+{commentColour}    marker_line_color='{markercolour}',
     marker_line_width={options.line_width},
     width={options.bar_width},
     offset={options.bar_shift},
@@ -1550,9 +1553,9 @@ fig.add_trace(go.Box(
     boxpoints=False,
     boxmean={True if options.box_mean == 'line' else False},
     width={options.box_width},
-{commentColour}    fillcolor='{fillcolour.hex}',
-{commentColour}    line_color='{markercolour.hex}',
-{commentColour}    marker_color='{markercolour.hex}',
+{commentColour}    fillcolor='{fillcolour}',
+{commentColour}    line_color='{markercolour}',
+{commentColour}    marker_color='{markercolour}',
     line_width={options.line_width},
     orientation='{'v' if options.vertical else 'h'}',
     opacity={options.opacity},
@@ -1566,8 +1569,8 @@ fig.add_trace(go.Scatter(
     showlegend=False,
     x={xdata if options.vertical else [statistics.mean(xdata)]},
     y={ydata if not options.vertical else [statistics.mean(ydata)]},
-{commentColour}    fillcolor='{fillcolour.hex}',
-{commentColour}    line_color='{markercolour.hex}',
+{commentColour}    fillcolor='{fillcolour}',
+{commentColour}    line_color='{markercolour}',
     line_width={options.line_width},
     opacity={options.opacity},
 ), col={options.col}, row={options.row}, secondary_y={options.y_secondary})
@@ -1588,9 +1591,9 @@ fig.add_trace(go.Violin(
     scalegroup='trace{inputTraceIndex}',
     y={ydata},
     x={xdata},
-{commentColour}    fillcolor='{fillcolour.hex}',
-{commentColour}    line_color='{options.line_colour.hex}',
-{commentColour}    marker_color='{markercolour.hex}',
+{commentColour}    fillcolor='{fillcolour}',
+{commentColour}    line_color='{options.line_colour}',
+{commentColour}    marker_color='{markercolour}',
     line_width={options.line_width},
     side='{side}',
     width={options.violin_width},
@@ -1640,7 +1643,7 @@ fig.add_trace(go.Violin(
     plotScript.write(f"fig.update_xaxes(showline={options.x_line_width > 0}, linewidth={options.x_line_width}, linecolor={options.x_colour}, gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
     plotScript.write("# Multi-category options:\n")
     plotScript.write(f"fig.update_yaxes(showdividers={options.y_line_width > 0}, dividercolor={options.y_colour}, dividerwidth={options.y_line_width}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"fig.update_xaxes(showdividers={options.x_line_width > 0}, dividercolor={options.x_colour}, dividerwidth={options.y_line_width}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_xaxes(showdividers={options.x_line_width > 0}, dividercolor={options.x_colour}, dividerwidth={options.x_line_width}, col={options.col}, row={options.row})\n")
     plotScript.write(f"{'# ' if not options.y_hide else ''}fig.update_yaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"{'# ' if not options.x_hide else ''}fig.update_xaxes(visible=False, showticklabels=False, showgrid=True, zeroline=False, row={options.row}, col={options.col})\n")
     plotScript.write(f"{'# ' if options.y_title is None else ''}fig.update_yaxes(title_text='{options.y_title}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")

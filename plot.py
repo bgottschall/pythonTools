@@ -643,7 +643,7 @@ parserPlotAxisOptions.add_argument("--grid-colour", help="set grid colour", type
 parserColourOptions = parser.add_argument_group('colour options')
 parserColourOptions.add_argument("--theme", help="theme to use (colour options only apply to 'palette')", default='palette', choices=["palette", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
 parserColourOptions.add_argument("-c", "--colours", help="define explicit colours (no palette)", default=[], nargs='+', type=str)
-parserColourOptions.add_argument("--colour-palette", help="valid seaborn colour palette (default %(default)s)",type=str, default='ch:s=0.2,rot=-0.3,d=0.9,l=0.1')
+parserColourOptions.add_argument("--colour-palette", help="valid seaborn colour palette (default %(default)s)", type=str, default='ch:s=2.8,rot=0.1,d=0.85,l=0.15')
 parserColourOptions.add_argument("--colour-count", help="set the number of colours to generate from palette", type=int, choices=Range(1,), default=None)
 parserColourOptions.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
 parserColourOptions.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
@@ -1170,11 +1170,18 @@ for input in args.input:
     inputOptions.traceCount = 0
     inputOptions.frameCount = 0
     for _index, (options, frame) in enumerate(inputFrames):
+        if _index not in focusedFrames:
+            continue
         inputOptions.frameCount += 1
         inputOptions.traceCount += len([x for x in frame.columns if str(x) not in inputOptions.traceSpecialColumns and str(x) not in inputOptions.frameSpecialColumns])
         frame = frame.replace([numpy.inf, -numpy.inf], numpy.nan)
         frame = frame.where(pandas.notnull(frame), None)
         inputFrames[_index] = (options, frame)
+
+    if inputOptions.frameCount == 0:
+        if not args.quiet:
+            print(f'WARNING: files {", ".join(inputFileNames)} did turn into any valid dataframes', file=sys.stderr)
+        continue
 
     inputOptions.inputIndex = totalInputCount
     totalTraceCount += inputOptions.traceCount
@@ -1196,7 +1203,7 @@ for input in args.input:
     inputOptions.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
     subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
 
-    data.append({'options': copy.deepcopy(inputOptions), 'frames': [f.where(pandas.notnull(f), None) for _, f in inputFrames]})
+    data.append({'options': copy.deepcopy(inputOptions), 'frames': [f.where(pandas.notnull(f), None) for f in [f for i, (_, f) in enumerate(inputFrames) if i in focusedFrames]]})
 
 
 # Separate python outputs from actual output put the first script
@@ -1242,7 +1249,7 @@ if args.colours:
     colours = args.colours
 else:
     colours = seaborn.color_palette(args.colour_palette, requiredColours)
-    colours = [f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r,g,b) in colours]
+    colours = [f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r, g, b) in colours]
 colourIndex = 0
 
 legendEntries = []

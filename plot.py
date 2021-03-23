@@ -600,6 +600,8 @@ parserPlotAxisOptions = parser.add_argument_group('plot axis options')
 parserPlotAxisOptions.add_argument("--y-secondary", help="plot to secondary y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-title", help="y-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--x-title", help="x-axis title", default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--y-title-standoff", help="added margin between tick labels and y-title in px", choices=Range(0,), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-title-standoff", help="added margin between tick labels and x-title in px", choices=Range(0,), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-type", help="choose type for y-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--x-type", help="choose type for x-axis (default %(default)s)", choices=['-', 'linear', 'log', 'date', 'category'], default='-', action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-hide", help="hide y-axis", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -641,10 +643,14 @@ parserPlotAxisOptions.add_argument("--x-line-width", help="set x-axis line width
 parserPlotAxisOptions.add_argument("--grid-colour", help="set grid colour", type=str, default=None, action=ChildAction, parent=inputFileArgument)
 
 parserColourOptions = parser.add_argument_group('colour options')
-parserColourOptions.add_argument("--theme", help="theme to use (colour options only apply to 'palette')", default='palette', choices=["palette", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
-parserColourOptions.add_argument("-c", "--colours", help="define explicit colours (no palette)", default=[], nargs='+', type=str)
-parserColourOptions.add_argument("--colour-palette", help="valid seaborn colour palette (default %(default)s)", type=str, default='ch:s=2.8,rot=0.1,d=0.85,l=0.15')
-parserColourOptions.add_argument("--colour-count", help="set the number of colours to generate from palette", type=int, choices=Range(1,), default=None)
+parserColourOptions.add_argument("--theme", help="theme to use (all colour options only apply to 'palette')", default='palette', choices=["palette", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
+parserColourOptions.add_argument("--colours", help="define explicit colours (filled up by palette)", default=[], nargs='+', type=str)
+parserColourOptions.add_argument("--palette", help="valid seaborn colour palette (default %(default)s)", type=str, default='ch:s=2.8,rot=0.1,d=0.85,l=0.15')
+parserColourOptions.add_argument("--palette-count", help="manually set the number of colours to generate from the palette", type=int, choices=Range(1, None), default=None)
+parserColourOptions.add_argument("--subplot-colours", help="specify explicit subplot colours (sets default colour cycle to subplot)", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--subplot-palette", help="valid seaborn colour palette used for this subplot (sets default colour cycle to subplot)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--subplot-palette-count", help="manually set the number of colours to generate from the subplot palette (set default colour cycle to subplot)", type=int, choices=Range(1, None), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--colour-cycle", help="cycle through colours globally or per subplot (default global)", choices=['subplot', 'global'], default=None, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
 parserColourOptions.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
 parserColourOptions.add_argument("--per-input-colours", help="one colour for each input file", action='store_true', default=False)
@@ -658,8 +664,8 @@ parserPlotGlobalOptions.add_argument("--x-master-title", help="x-axis master tit
 parserPlotGlobalOptions.add_argument("--y-master-title", help="y-axis master title", type=str, default=None)
 parserPlotGlobalOptions.add_argument("--x-share", help="share subplot x-axis (default %(default)s)", default=False, action="store_true")
 parserPlotGlobalOptions.add_argument("--y-share", help="share subplot y-axis (default %(default)s)", default=False, action="store_true")
-parserPlotGlobalOptions.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots (default %(default)s)", default=0.08, choices=Range(0, 1))
-parserPlotGlobalOptions.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots (default %(default)s)", default=0.08, choices=Range(0, 1))
+parserPlotGlobalOptions.add_argument("--vertical-spacing", type=float, help="vertical spacing between subplots", default=None, choices=Range(0, 1))
+parserPlotGlobalOptions.add_argument("--horizontal-spacing", type=float, help="horizontal spacing between subplots", default=None, choices=Range(0, 1))
 parserPlotGlobalOptions.add_argument("--font-size", help="font size (default %(default)s)", type=int, default=12)
 parserPlotGlobalOptions.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 
@@ -755,6 +761,12 @@ for input in args.input:
     else:
         options.show_error = False
     options.hide_error = not options.show_error
+
+    if options.colour_cycle is None and (len(options.subplot_colours) > 0 or options.subplot_palette is not None or options.subplot_palette_count is not None):
+        options.colour_cycle = 'subplot'
+
+    if options.colour_cycle is None:
+        options.colour_cycle = 'global'
 
     options.y_grid_colour = f"'{options.y_grid_colour}'" if options.y_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
     options.x_grid_colour = f"'{options.x_grid_colour}'" if options.x_grid_colour is not None else f"'{options.grid_colour}'" if options.grid_colour is not None else None
@@ -1192,7 +1204,19 @@ for input in args.input:
     if (inputOptions.row not in subplotGridDefinition):
         subplotGridDefinition[inputOptions.row] = {}
     if (inputOptions.col not in subplotGridDefinition[inputOptions.row]):
-        subplotGridDefinition[inputOptions.row][inputOptions.col] = {'rowspan': inputOptions.rowspan, 'colspan': inputOptions.colspan, 'secondary_y': inputOptions.y_secondary, 'title': inputOptions.title, 'traces': 0}
+        subplotGridDefinition[inputOptions.row][inputOptions.col] = copy.deepcopy({
+            'rowspan': inputOptions.rowspan,
+            'colspan': inputOptions.colspan,
+            'secondary_y': inputOptions.y_secondary,
+            'title': inputOptions.title,
+            'traces': 0,
+            'frames': 0,
+            'colours': args.colours,
+            'palette': args.palette,
+            'palette_count': args.palette_count,
+            'palette_local': inputOptions.colour_cycle == 'subplot',
+            'palette_index': 0
+        })
 
     subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'] = max(inputOptions.rowspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'])
     subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'] = max(inputOptions.colspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['colspan'])
@@ -1200,8 +1224,16 @@ for input in args.input:
     if inputOptions.title is not None:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['title'] = inputOptions.title
 
+    if len(inputOptions.subplot_colours) > 0:
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['colours'] = copy.copy(inputOptions.subplot_colours)
+    if inputOptions.subplot_palette is not None:
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['palette'] = inputOptions.subplot_palette
+    if inputOptions.subplot_palette_count is not None:
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['palette_count'] = inputOptions.subplot_palette_count
+
     inputOptions.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
     subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
+    subplotGridDefinition[inputOptions.row][inputOptions.col]['frames'] += inputOptions.frameCount
 
     data.append({'options': copy.deepcopy(inputOptions), 'frames': [f.where(pandas.notnull(f), None) for f in [f for i, (_, f) in enumerate(inputFrames) if i in focusedFrames]]})
 
@@ -1243,14 +1275,19 @@ for i, p in enumerate(args.output):
     if not os.path.isabs(p):
         args.output[i] = os.path.relpath(p, scriptContext)
 
-# Building up the colour array
-requiredColours = args.colour_count if args.colour_count is not None else totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colours else totalInputCount
-if args.colours:
-    colours = args.colours
-else:
-    colours = seaborn.color_palette(args.colour_palette, requiredColours)
-    colours = [f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r, g, b) in colours]
-colourIndex = 0
+
+for r in range(1, subplotGrid[1]['max'] + 1):
+    for c in range(1, subplotGrid[0]['max'] + 1):
+        if r in subplotGridDefinition and c in subplotGridDefinition[r]:
+            subplot = subplotGridDefinition[r][c]
+            if subplot['palette_count'] is None:
+                if subplot['palette_local']:
+                    subplot['palette_count'] = subplot['traces'] if args.per_trace_colours else subplot['frames'] if args.per_frame_colour else 1
+                else:
+                    subplot['palette_count'] = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colour else totalInputCount
+                subplot['palette_count'] = max(0, subplot['palette_count'] - len(subplot['colours']))
+            subplot['colours'].extend([f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r, g, b) in seaborn.color_palette(subplot['palette'], subplot['palette_count'])])
+globalPaletteIndex = 0
 
 legendEntries = []
 
@@ -1355,6 +1392,7 @@ inputIndex = 0
 for input in data:
     options = input['options']
     frames = input['frames']
+    subplot = subplotGridDefinition[options.row][options.col]
     plotRange = []
     inputTraceIndex = 0
     inputFrameIndex = 0
@@ -1384,7 +1422,8 @@ for input in data:
             if options.trace_colours and frameTraceIndex < len(options.trace_colours):
                 fillcolour = options.trace_colours[frameTraceIndex]
             else:
-                fillcolour = colours[colourIndex % len(colours)]
+                colourIndex = (subplot['palette_index'] if subplot['palette_local'] else globalPaletteIndex) % len(subplot['colours'])
+                fillcolour = subplot['colours'][colourIndex]
             markercolour = options.line_colour
 
             _errors_symmetric = True
@@ -1617,12 +1656,22 @@ fig.add_trace(go.Violin(
             traceIndex += 1
             frameTraceIndex += 1
             inputTraceIndex += 1
-            colourIndex += 1 if args.per_trace_colours else 0
+            if subplot['palette_local']:
+                subplot['palette_index'] += 1 if args.per_trace_colours else 0
+            else:
+                globalPaletteIndex += 1 if args.per_trace_colours else 0
         inputFrameIndex += 1
         frameIndex += 1
-        colourIndex += 1 if args.per_frame_colours else 0
+        if subplot['palette_local']:
+            subplot['palette_index'] += 1 if args.per_frame_colours else 0
+        else:
+            globalPaletteIndex += 1 if args.per_frame_colours else 0
     inputIndex += 1
-    colourIndex += 1 if args.per_input_colours else 0
+    if subplot['palette_local']:
+        subplot['palette_index'] += 1 if args.per_input_colours else 0
+    else:
+        globalPaletteIndex += 1 if args.per_input_colours else 0
+
     # Find out if we need left, right and bottom margin:
     if defaultLeftMargin is None and options.col == 1 and options.y_title and not options.y_secondary:
         defaultLeftMargin = True
@@ -1644,8 +1693,8 @@ fig.add_trace(go.Violin(
 
     plotScript.write("\n\n")
     plotScript.write("# Subplot specific options:\n")
-    plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
-    plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', col={options.col}, row={options.row})\n")
+    plotScript.write(f"fig.update_yaxes(type='{options.y_type}', rangemode='{options.y_range_mode}', automargin={True if options.y_title_standoff is None else False}, title_standoff={options.y_title_standoff}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(type='{options.x_type}', rangemode='{options.x_range_mode}', automargin={True if options.x_title_standoff is None else False}, title_standoff={options.x_title_standoff}, col={options.col}, row={options.row})\n")
     plotScript.write(f"fig.update_yaxes(showline={options.y_line_width > 0}, linewidth={options.y_line_width}, linecolor={options.y_colour}, gridcolor={options.y_grid_colour}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"fig.update_xaxes(showline={options.x_line_width > 0}, linewidth={options.x_line_width}, linecolor={options.x_colour}, gridcolor={options.x_grid_colour}, col={options.col}, row={options.row})\n")
     plotScript.write("# Multi-category options:\n")

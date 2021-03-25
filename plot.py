@@ -392,7 +392,10 @@ class DataframeActions:
             else:
                 rowIdx = int(rowIdx)
                 for v in frame.iloc[rowIdx, :].unique():
-                    newFrames.append(frame[frame.iloc[rowIdx, :] == v])
+                    if v != v:
+                        newFrames.append(frame[frame.iloc[rowIdx, :].isna()])
+                    else:
+                        newFrames.append(frame[frame.iloc[rowIdx, :] == v])
         return newFrames
 
     def splitFramesByColumnIdx(dataframes, columnIdx):

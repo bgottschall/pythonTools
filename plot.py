@@ -405,7 +405,10 @@ class DataframeActions:
             else:
                 columnIdx = int(columnIdx)
                 for v in frame.iloc[:, columnIdx].unique():
-                    newFrames.append(frame[frame.iloc[:, columnIdx] == v])
+                    if v != v:
+                        newFrames.append(frame[frame.iloc[:, columnIdx].isna()])
+                    else:
+                        newFrames.append(frame[frame.iloc[:, columnIdx] == v])
         return newFrames
 
     def printFrames(filenames, dataframe, frameIndex, frameCount, precision=None):

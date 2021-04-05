@@ -300,7 +300,9 @@ class DataframeActions:
         if colIdx == 'index':
             return dataframe.reindex(dataframe.index.sort_values(ascending=(order == 'asc')))
         else:
-            return dataframe.reindex(dataframe.iloc[:, int(colIdx)].sort_values(ascending=(order == 'asc')).index)
+            sortKey = dataframe.iloc[:, int(colIdx)]
+            sortKey.reset_index(drop=True, inplace=True)
+            return dataframe.iloc[sortKey.sort_values(ascending=(order == 'asc')).index, :]
 
     def addConstant(dataframe, constant):
         return dataframe + constant
@@ -490,7 +492,7 @@ parserFileOptions.add_argument("--select-rows", help="select these rows", type=s
 parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=int, default=[], sticky_default=True, choices=Range(None, None), nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 
-parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='asc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='desc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-function", help="sort rows after function or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-columns", help="sort columns", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-by-irow", help="sort column after this row index", type=str, default=None, choices=Range(None, None, ['columns']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -579,10 +581,11 @@ parserLinePlotOptions.add_argument('--line-marker-size', help='choose line marke
 parserLinePlotOptions.add_argument("--line-text-position", choices=["top left", "top center", "top right", "middle left", "middle center", "middle right", "bottom left", "bottom center", "bottom right"], help="choose line text positon (default %(default)s)", default='middle center', action=ChildAction, parent=inputFileArgument)
 
 parserBarPlotOptions = parser.add_argument_group('bar plot options')
-parserBarPlotOptions.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'unique_group', 'overlay', 'relative'], default='group')
+parserBarPlotOptions.add_argument("--bar-mode", help="choose barmode (default %(default)s)", choices=['stack', 'group', 'overlay', 'relative'], default='group')
 parserBarPlotOptions.add_argument("--bar-width", help="set explicit bar width", choices=Range(0, None, ['auto']), default='auto', action=ChildAction, parent=inputFileArgument)
 parserBarPlotOptions.add_argument("--bar-shift", help="set bar shift", choices=Range(None, None, ['auto']), default='auto', action=ChildAction, parent=inputFileArgument)
 parserBarPlotOptions.add_argument("--bar-text-position", help="choose bar text position (default %(default)s)", choices=["inside", "outside", "auto", "none"], default='none', action=ChildAction, parent=inputFileArgument)
+parserBarPlotOptions.add_argument("--bar-text-template", help="set bar text template (default %(default)s)", type=str, default='', action=ChildAction, parent=inputFileArgument)
 parserBarPlotOptions.add_argument("--bar-gap", help="set bar gap (default $(default)s)", choices=Range(0, 1, ['auto']), default='auto')
 parserBarPlotOptions.add_argument("--bar-group-gap", help="set bar group gap (default $(default)s)", choices=Range(0, 1), default=0)
 
@@ -618,6 +621,8 @@ parserPlotAxisOptions.add_argument("--y-range-from", help="y-axis start (default
 parserPlotAxisOptions.add_argument("--x-range-from", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-range-to", help="y-axis end (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--x-range-to", help="x-axis start (default %(default)s)", default='auto', sticky_default=True, choices=Range(None, None, ['auto']), action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--y-tick-hide", help="set format of y-axis ticks", default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotAxisOptions.add_argument("--x-tick-hide", help="set format of y-axis ticks", default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick-format", help="set format of y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--x-tick-format", help="set format of x-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserPlotAxisOptions.add_argument("--y-tick-suffix", help="add suffix to y-axis ticks", default='', sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -652,11 +657,15 @@ parserColourOptions = parser.add_argument_group('colour options')
 parserColourOptions.add_argument("--theme", help="theme to use (all colour options only apply to 'palette')", default='palette', choices=["palette", "plotly", "plotly_white", "plotly_dark", "ggplot2", "seaborn", "simple_white", "none"])
 parserColourOptions.add_argument("--colours", help="define explicit colours (filled up by palette)", default=[], nargs='+', type=str)
 parserColourOptions.add_argument("--palette", help="valid seaborn colour palette (default %(default)s)", type=str, default='ch:s=2.8,rot=0.1,d=0.85,l=0.15')
+parserColourOptions.add_argument("--palette-reverse", help="reverse colour palette", action="store_true", default=False)
 parserColourOptions.add_argument("--palette-count", help="manually set the number of colours to generate from the palette", type=int, choices=Range(1, None), default=None)
 parserColourOptions.add_argument("--subplot-colours", help="specify explicit subplot colours (sets default colour cycle to subplot)", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--subplot-palette", help="valid seaborn colour palette used for this subplot (sets default colour cycle to subplot)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--subplot-palette-reverse", help="reverse subplot colour palette", sub_action="store_true", default=False, nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--subplot-palette-count", help="manually set the number of colours to generate from the subplot palette (set default colour cycle to subplot)", type=int, choices=Range(1, None), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--colour-cycle", help="cycle through colours globally or per subplot (default global)", choices=['subplot', 'global'], default=None, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--colour-debug", help="print generated colour palettes", action="store_true", default=False)
+
 parserColourOptions.add_argument("--per-trace-colours", help="one colour for each trace (default)", action='store_true', default=False)
 parserColourOptions.add_argument("--per-frame-colours", help="one colour for each dataframe", action='store_true', default=False)
 parserColourOptions.add_argument("--per-input-colours", help="one colour for each input file", action='store_true', default=False)
@@ -707,11 +716,8 @@ args = parser.parse_args()
 
 commentColour = ''
 commentBackgroundColour = ''
-uniqueBarMode = False
 
-if args.theme == 'palette':
-    args.theme = 'plotly_white'
-else:
+if args.theme != 'palette':
     # We have chosen a theme, so just comment all colour settings out
     commentColour = '# '
     commentBackgroundColour = '' if args.background_colour else '# '
@@ -725,10 +731,6 @@ if not args.background_colour:
 # Setting the legend entries default in case nothing was chosen
 if args.legend_entries is None:
     args.legend_entries = 'unique'
-
-if (args.bar_mode == 'unique_group'):
-    args.bar_mode = 'group'
-    uniqueBarMode = True
 
 if (not args.per_trace_colours and not args.per_frame_colours and not args.per_input_colours) or (args.per_trace_colours):
     args.per_trace_colours = True
@@ -789,6 +791,14 @@ for input in args.input:
     options.bar_shift = None if options.bar_shift == 'auto' else float(options.bar_shift)
     options.y_tickangle = None if options.y_tickangle == 'auto' else float(options.y_tickangle)
     options.x_tickangle = None if options.x_tickangle == 'auto' else float(options.x_tickangle)
+
+    if options.plot != 'line':
+        # If explicitly set the range-to the automatic ranging would start at the
+        # min value which is confusing, set the from to 0 for all but line plots
+        if options.y_range_to is not None and options.y_range_from is None:
+            options.y_range_from = 0
+        if options.x_range_to is not None and options.x_range_from is None:
+            options.x_range_from = 0
 
 args.bar_gap = None if args.bar_gap == 'auto' else float(args.bar_gap)
 args.master_title = f"'{args.master_title}'" if args.master_title is not None else None
@@ -1221,6 +1231,7 @@ for input in args.input:
             'palette': args.palette,
             'palette_count': args.palette_count,
             'palette_local': inputOptions.colour_cycle == 'subplot',
+            'palette_reverse': (inputOptions.colour_cycle == 'subplot' and inputOptions.subplot_palette_reverse) or (inputOptions.colour_cycle == 'global' and args.palette_reverse),
             'palette_index': 0
         })
 
@@ -1282,6 +1293,8 @@ for i, p in enumerate(args.output):
         args.output[i] = os.path.relpath(p, scriptContext)
 
 
+if args.theme == 'palette' and args.colour_debug:
+    print('Colour Palettes:')
 for r in range(1, subplotGrid[1]['max'] + 1):
     for c in range(1, subplotGrid[0]['max'] + 1):
         if r in subplotGridDefinition and c in subplotGridDefinition[r]:
@@ -1293,6 +1306,10 @@ for r in range(1, subplotGrid[1]['max'] + 1):
                     subplot['palette_count'] = totalTraceCount if args.per_trace_colours else totalFrameCount if args.per_frame_colour else totalInputCount
                 subplot['palette_count'] = max(0, subplot['palette_count'] - len(subplot['colours']))
             subplot['colours'].extend([f'rgb({int(255*r)}, {int(255*g)}, {int(255*b)})' for (r, g, b) in seaborn.color_palette(subplot['palette'], subplot['palette_count'])])
+            if subplot['palette_reverse']:
+                subplot['colours'].reverse()
+            if args.theme == 'palette' and args.colour_debug:
+                print(f'    subplot @ [{r}, {c}, local({subplot["palette_local"]})]: ' + ' '.join(subplot['colours']))
 globalPaletteIndex = 0
 
 legendEntries = []
@@ -1365,7 +1382,7 @@ if len(args.output) == 0:
 
 subplotTitles = []
 
-plotScript.write(f"""\n\nplotly.io.templates.default = '{args.theme}'
+plotScript.write(f"""\n\nplotly.io.templates.default = '{"plotly_white" if args.theme == "palette" else args.theme}'
 
 fig = make_subplots(
     cols={subplotGrid[0]['max']},
@@ -1489,7 +1506,7 @@ for input in data:
                 updateRange(plotRange, [xdata, ydata])
 
             if options.offsetgroups == 'auto':
-                offsetgroup = (0 if (uniqueBarMode) else options.subplotTraceIndex) + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None
+                offsetgroup = options.subplotTraceIndex + inputFrameIndex + frameTraceIndex + 1 if args.bar_mode == 'group' else None
             else:
                 if inputTraceIndex < len(options.offsetgroups):
                     offsetgroup = options.offsetgroups[inputTraceIndex]
@@ -1575,7 +1592,9 @@ fig.add_trace(go.Bar(
     x={xdata},""")
                 if (_labels is not None):
                     plotScript.write(f"""
-    text={_labels},
+    text={_labels},""")
+                plotScript.write(f"""
+    texttemplate='{options.bar_text_template}',
     textposition='{options.bar_text_position}',""")
                 if (_bases is not None):
                     plotScript.write(f"""
@@ -1722,8 +1741,10 @@ fig.add_trace(go.Violin(
         plotScript.write(f"fig.update_xaxes(range=[{options.x_range_from}, {options.x_range_to}], col={options.col}, row={options.row})\n")
     plotScript.write(f"# fig.update_yaxes(range=[{plotRange[0]['min']}, {plotRange[0]['max']}], col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
     plotScript.write(f"# fig.update_xaxes(range=[{plotRange[1]['min']}, {plotRange[1]['max']}], col={options.col}, row={options.row})\n")
-    plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, tickangle={options.x_tickangle}, col={options.col}, row={options.row})\n")
     plotScript.write(f"fig.update_yaxes(tickmode='{options.y_tickmode}', ticks='{options.y_ticks}', nticks={options.y_nticks}, tick0='{options.y_tick0}', dtick='{options.y_dtick}', tickvals={options.y_tickvals}, ticktext={options.y_ticktext}, tickangle={options.y_tickangle}, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"fig.update_xaxes(tickmode='{options.x_tickmode}', ticks='{options.x_ticks}', nticks={options.x_nticks}, tick0='{options.x_tick0}', dtick='{options.x_dtick}', tickvals={options.x_tickvals}, ticktext={options.x_ticktext}, tickangle={options.x_tickangle}, col={options.col}, row={options.row})\n")
+    plotScript.write(f"{'# ' if not options.y_tick_hide else ''}fig.update_yaxes(showticklabels=False, col={options.col}, row={options.row}, secondary_y={options.y_secondary})\n")
+    plotScript.write(f"{'# ' if not options.x_tick_hide else ''}fig.update_xaxes(showticklabels=False, col={options.col}, row={options.row})\n")
     plotScript.write("\n")
 
 if (args.violin_mode == 'halfgroup'):

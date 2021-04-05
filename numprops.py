@@ -27,8 +27,29 @@ def numbersFromStdIn():
     return numpy.array([float(x) for x in stdinSet if isFloat(x)])
 
 
+quiet = False
+formatter = '{:}'
+
 # props = { propname : { 'label' : outputlabel, 'func' : propertyfunction(l1 or l1, arg), 'secondary' : }}
 # % in property name is taken as argument
+
+
+def polyfitProp(l1, l2, arg):
+    arg = int(arg)
+    fitted = numpy.polyfit(l1, l2, arg)
+    res = ''
+    if quiet:
+        if formatter == '{:.0f}':
+            res = str([int(formatter.format(x)) for x in fitted])
+        else:
+            res = str([float(formatter.format(x)) for x in fitted])
+    else:
+        res += formatter.format(fitted[0]) + f'x^{arg}'
+        for i, a in enumerate(fitted[1:-1]):
+            res += ((' + ' + formatter.format(a)) if a >= 0 else (' - ' + formatter.format(a * -1))) + f'x^{arg - i - 1}'
+        res += (' + ' + formatter.format(fitted[-1])) if fitted[-1] >= 0 else (' - ' + formatter.format(fitted[-1] * -1))
+    return res
+
 
 props = {
     'count':      {'label': 'Count',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)},
@@ -48,6 +69,7 @@ props = {
     'pvalue':     {'label': 'P-Value',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
     'spearmanr':  {'label': 'SpearmanR', 'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]},
     'pearsonr':   {'label': 'PearsonR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.pearsonr(l1, l2)[0]},
+    'polyfit%d':  {'label': 'PolyFit%D',   'secondary': True,  'argument': True,  'func': polyfitProp}
 }
 
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
@@ -61,6 +83,10 @@ parser.add_argument("--secondary", help="secondary number set used e.g. to calcu
 parser.add_argument("--debug", help="turn on debug output", action="store_true")
 parser.add_argument("primary", help="numbers to calculate properties on (default read from stdin)", default=[], nargs='*')
 args = parser.parse_args()
+
+quiet = args.quiet
+if args.precision is not None:
+    formatter = f'{{:.{args.precision}f}}'
 
 l1 = None
 l2 = None
@@ -98,14 +124,18 @@ for p in args.properties:
         prop = p
     else:
         for cp in props:
-            if props[cp]['argument']:
-                pattern = re.compile(re.escape(cp).replace('%', '(.+)', 1))  # [-+]?\d*\.\d+|\d+)', 1))
-                reres = pattern.search(p)
+            try:
+                if props[cp]['argument']:
+                    pattern = re.compile(re.escape(cp).replace('%', '(.+)', 1))  # [-+]?\d*\.\d+|\d+)', 1))
+                    reres = pattern.search(p)
 
-                if reres and len(reres.groups()) == 1:
-                    arg = reres.group(1)
-                    prop = cp
-                    break
+                    if reres and len(reres.groups()) == 1:
+                        arg = float(reres.group(1))
+                        prop = cp
+                        break
+            except Exception:
+                pass
+
     if prop is None:
         raise Exception(f"Could not find property '{p}'")
 
@@ -121,7 +151,10 @@ for p in args.properties:
     if props[prop]['argument']:
         if args.debug:
             print(f'[DEBUG][ARG] {arg}')
-        labels.append(props[prop]['label'].replace('%', arg, 1))
+        tmp = str(arg)
+        if (int(arg) == arg):
+            tmp = str(int(arg))
+        labels.append(props[prop]['label'].replace('%', str(tmp), 1))
     else:
         labels.append(props[prop]['label'])
 
@@ -129,13 +162,7 @@ for p in args.properties:
     if args.debug:
         print(f'[DEBUG][{p}] {results[-1]}')
 
-if args.precision is not None:
-    if args.precision == 0:
-        results = ['{:d}'.format(int(x)) for x in results]
-    else:
-        results = [f'{{:.{args.precision}f}}'.format(x) for x in results]
-else:
-    results = ['{:}'.format(x) for x in results]
+results = [formatter.format(x) if isFloat(x) else x for x in results]
 
 if args.quiet:
     print(' '.join(results))

@@ -463,8 +463,7 @@ class DataframeActions:
         print(pSep)
 
     def framesToCSV(dataframes, filenames=['stdout'], separator=None, quiet=False, precision=None):
-        _index = 1
-        for (frame, filename) in zip(dataframes, filenames):
+        for _index, (frame, filename) in enumerate(zip(dataframes, filenames)):
             sep = ';' if separator is None else separator
             if filename.endswith('.tsv'):
                 sep = '\t'
@@ -476,7 +475,6 @@ class DataframeActions:
                 fFile.close()
             if not quiet and not fFile == sys.stdout:
                 print(f'Frame {_index + 1}/{len(dataframes)} saved to {filename}')
-            _index += 1
 
     def framesToPickle(dataframes, filename, quiet=False):
         fFile = sys.stdout.buffer if filename == 'stdout' else sys.stderr.buffer if filename == 'stderr' else xopen.xopen(filename, 'wb')

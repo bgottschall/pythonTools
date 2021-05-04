@@ -279,7 +279,7 @@ class DataframeActions:
 
     def sortRows(dataframe, function='mean', order='asc'):
         sortKey = getattr(dataframe, function)(axis=1)
-        return dataframe.reindex(sortKey.sort_values(ascending=(order == 'asc')).index)
+        return dataframe.iloc[sortKey.sort_values(ascending=(order == 'asc')).index, :]
 
     def reverseColumns(dataframe):
         return dataframe.iloc[::, ::-1]
@@ -298,7 +298,7 @@ class DataframeActions:
 
     def sortRowsByColumnIdx(dataframe, colIdx, order='asc'):
         if colIdx == 'index':
-            return dataframe.reindex(dataframe.index.sort_values(ascending=(order == 'asc')))
+            return dataframe.sort_index(ascending=(order == 'asc'))
         else:
             sortKey = dataframe.iloc[:, int(colIdx)]
             sortKey.reset_index(drop=True, inplace=True)
@@ -316,7 +316,7 @@ class DataframeActions:
     def abs(dataframe):
         return dataframe.abs()
 
-    def applyOnRowIdx(dataframe, rowIdx, function='abs', inclusive=True):
+    def applyOnRowIdx(dataframe, rowIdx, function='abs', inclusive=True, parameter='1', quiet=False):
         with pandas.option_context('mode.chained_assignment', None):
             functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
             if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
@@ -325,6 +325,21 @@ class DataframeActions:
                 dataframe.iloc[rowIdx, :] = functionMap[function]
             elif function == 'set':
                 dataframe = dataframe.apply(lambda _: dataframe.iloc[rowIdx, :], axis=1)
+            elif function == 'polyfit':
+                try:
+                    parameter = int(parameter)
+                except Exception:
+                    print('ERROR: --apply-parameter needs to be an integer for polyfit')
+                fitTarget = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
+                if not quiet and fitTarget.isna().values.any():
+                    print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
+                fitTarget = fitTarget.fillna(0).to_list()
+                fitAlong = dataframe.columns.to_list()
+                if not all([isFloat(x) for x in fitAlong]):
+                    if not quiet:
+                        print('WARNING: columns are not numeric, will fit along a static number series!', file=sys.stderr)
+                    fitAlong = list(range(len(fitTarget)))
+                dataframe.iloc[rowIdx, :] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
             else:
                 applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
                 dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
@@ -332,7 +347,7 @@ class DataframeActions:
                     dataframe.iloc[rowIdx, :] = applyRow
             return dataframe
 
-    def applyOnColumnIdx(dataframe, columnIdx, function='abs', inclusive=True):
+    def applyOnColumnIdx(dataframe, columnIdx, function='abs', inclusive=True, parameter='1', quiet=False):
         with pandas.option_context('mode.chained_assignment', None):
             functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
             if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
@@ -341,6 +356,21 @@ class DataframeActions:
                 dataframe.iloc[:, columnIdx] = functionMap[function]
             elif function == 'set':
                 dataframe = dataframe.apply(lambda _: dataframe.iloc[:, colIdx], axis=1)
+            elif function == 'polyfit':
+                try:
+                    parameter = int(parameter)
+                except Exception:
+                    print('ERROR: --apply-parameter needs to be an integer for polyfit')
+                fitTarget = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+                if not quiet and fitTarget.isna().values.any():
+                    print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
+                fitTarget = fitTarget.fillna(0).to_list()
+                fitAlong = dataframe.index.to_list()
+                if not all([isFloat(x) for x in fitAlong]):
+                    if not quiet:
+                        print('WARNING: index is not numeric, will fit along a static number series!', file=sys.stderr)
+                    fitAlong = list(range(len(fitTarget)))
+                dataframe.iloc[:, columnIdx] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
             else:
                 applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
                 dataframe = dataframe.apply(lambda col: getattr(col, function)(applyColumn), axis=0)
@@ -370,7 +400,7 @@ class DataframeActions:
         if columnIdx == 'index':
             return getattr(dataframe.groupby(dataframe.index, axis=0), function)()
         else:
-            return getattr(dataframe.groupby(dataframe.iloc[:, int(columnIdx)], as_index=False, axis=0), function)()
+            return getattr(dataframe.groupby(dataframe.iloc[:, int(columnIdx)], as_index=True, axis=0), function)()
 
     def groupByRowIdx(dataframe, rowIdx, function='sum'):
         if rowIdx == 'columns':
@@ -524,8 +554,9 @@ parserFileOptions.add_argument("--group-by-irow", help="group by this row index"
 parserFileOptions.add_argument("--group-by-row", help="group by this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-mode", help="convert all values to absolute values", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-parameter", help="additional function paramter (e.g. dimension of polyfit)", type=str, default='1', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-mode", help="apply function including/excluding the selected row/column (not applicable to all functions)", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set', 'polyfit'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=str, default=None, nargs='+', sticky_default=True, choices=Range(None, None, ['all']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -569,6 +600,7 @@ parserPlotOptions.add_argument("--line-width", help="set line width (default %(d
 parserPlotOptions.add_argument("--line-colour", help="set line colour  (default %(default)s) (line charts are using just colour)", type=str, default='#222222', action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--opacity", help="colour opacity (default 0.8 for overlay modes, else 1.0)", choices=Range(0, 1, ['auto']), action=ChildAction, parent=inputFileArgument)
 parserPlotOptions.add_argument("--offsetgroups", help="set explicit offsetgroups for e.g. bar charts", type=int, default='auto', nargs='+', choices=Range(0, None, ['auto']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserPlotOptions.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default=None, action=ChildAction, parent=inputFileArgument)
 
 parserLinePlotOptions = parser.add_argument_group('line plot options')
 parserLinePlotOptions.add_argument("--line-mode", choices=['none', 'lines', 'markers', 'text', 'lines+markers', 'lines+text', 'markers+text', 'lines+markers+text'], help="choose linemode (default %(default)s)", default='lines', action=ChildAction, parent=inputFileArgument)
@@ -659,10 +691,12 @@ parserColourOptions.add_argument("--colours", help="define explicit colours (fil
 parserColourOptions.add_argument("--palette", help="valid seaborn colour palette (default %(default)s)", type=str, default='ch:s=2.8,rot=0.1,d=0.85,l=0.15')
 parserColourOptions.add_argument("--palette-reverse", help="reverse colour palette", action="store_true", default=False)
 parserColourOptions.add_argument("--palette-count", help="manually set the number of colours to generate from the palette", type=int, choices=Range(1, None), default=None)
+parserColourOptions.add_argument("--palette-start", help="set the palette start index (default %(default)s)", type=int, default=0, choices=Range(0, None))
 parserColourOptions.add_argument("--subplot-colours", help="specify explicit subplot colours (sets default colour cycle to subplot)", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--subplot-palette", help="valid seaborn colour palette used for this subplot (sets default colour cycle to subplot)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--subplot-palette-reverse", help="reverse subplot colour palette", sub_action="store_true", default=False, nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--subplot-palette-count", help="manually set the number of colours to generate from the subplot palette (set default colour cycle to subplot)", type=int, choices=Range(1, None), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserColourOptions.add_argument("--subplot-palette-start", help="set the subplot palette start index (default 0)", type=int, default=None, choices=Range(0, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--colour-cycle", help="cycle through colours globally or per subplot (default global)", choices=['subplot', 'global'], default=None, action=ChildAction, parent=inputFileArgument)
 parserColourOptions.add_argument("--colour-debug", help="print generated colour palettes", action="store_true", default=False)
 
@@ -685,7 +719,6 @@ parserPlotGlobalOptions.add_argument("--font-size", help="font size (default %(d
 parserPlotGlobalOptions.add_argument("--font-family", help="font family (default %(default)s)", type=str, default='"Open Sans", verdana, arial, sans-serif')
 
 parserPlotGlobalOptions.add_argument("--legend", help="quick setting the legend position (default %(default)s)", type=str, choices=['topright', 'topcenter', 'topleft', 'bottomright', 'bottomcenter', 'bottomleft', 'middleleft', 'center', 'middleright', 'belowleft', 'belowcenter', 'belowright', 'aboveleft', 'abovecenter', 'aboveright', 'righttop', 'rightmiddle', 'rightbottom', 'lefttop', 'leftmiddle', 'leftbottom'], default='righttop')
-parserPlotGlobalOptions.add_argument("--legend-entries", help="choose which entries are shown in legend", choices=['all', 'unique', 'none'], default=None)
 parserPlotGlobalOptions.add_argument("--legend-x", help="x legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parserPlotGlobalOptions.add_argument("--legend-y", help="y legend position (-2 to 3)", type=float, choices=Range(-2, 3), default=None)
 parserPlotGlobalOptions.add_argument("--legend-x-anchor", help="set legend xanchor", choices=['auto', 'left', 'center', 'right'], default=None)
@@ -722,15 +755,9 @@ if args.theme != 'palette':
     commentColour = '# '
     commentBackgroundColour = '' if args.background_colour else '# '
     # Better to show all legend entries now if not otherwise chosen
-    if args.legend_entries is None:
-        args.legend_entries = 'all'
 
 if not args.background_colour:
     args.background_colour = 'rgba(255, 255, 255, 0)'
-
-# Setting the legend entries default in case nothing was chosen
-if args.legend_entries is None:
-    args.legend_entries = 'unique'
 
 if (not args.per_trace_colours and not args.per_frame_colours and not args.per_input_colours) or (args.per_trace_colours):
     args.per_trace_colours = True
@@ -791,6 +818,12 @@ for input in args.input:
     options.bar_shift = None if options.bar_shift == 'auto' else float(options.bar_shift)
     options.y_tickangle = None if options.y_tickangle == 'auto' else float(options.y_tickangle)
     options.x_tickangle = None if options.x_tickangle == 'auto' else float(options.x_tickangle)
+
+    if options.legend_entries is None:
+        if args.theme != 'palette':
+            options.legend_entries = 'all'
+        else:
+            options.legend_entries = 'unique'
 
     if options.plot != 'line':
         # If explicitly set the range-to the automatic ranging would start at the
@@ -979,9 +1012,10 @@ for input in args.input:
     sortFunction = input['args'].sort_function
     addAt = input['args'].add_at
     addFunction = input['args'].add_function
+    applyParameter = input['args'].apply_parameter
     applyFunction = input['args'].apply_function
-    groupFunction = input['args'].group_function
     applyInclusive = input['args'].apply_mode == 'inclusive'
+    groupFunction = input['args'].group_function
     sortOrder = input['args'].sort_order
     outputPrecision = None if input['args'].output_precision == 'default' else int(input['args'].output_precision)
 
@@ -989,7 +1023,7 @@ for input in args.input:
 
     for (optionName, optionValue) in input['args'].ordered_args:
         multiFrameActions = ['output_precision', 'select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
-                             'apply_mode', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
+                             'apply_mode', 'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if (_index) not in focusedFrames:
@@ -1043,44 +1077,44 @@ for input in args.input:
                     frame = DataframeActions.normaliseToConstant(frame, optionValue)
                 elif optionName == 'normalise_to_column':
                     columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, 'div', True)
+                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, 'div', True, '')
                 elif optionName == 'normalise_to_icolumn':
-                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, 'div', True)
+                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, 'div', True, '')
                 elif optionName == 'normalise_to_row':
                     rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, 'div', True)
+                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, 'div', True, '')
                 elif optionName == 'normalise_to_irow':
-                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, 'div', True)
+                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, 'div', True, '')
                 elif optionName == 'abs':
                     frame = DataframeActions.abs(frame)
                 elif optionName == 'apply_irow':
-                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, applyFunction, applyInclusive)
+                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_row':
                     rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive)
+                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_icolumn':
-                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, applyFunction, applyInclusive)
+                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_column':
                     columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive)
+                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_irows':
                     if 'all' in optionValue:
                         optionValue = range(frame.shape[0])
                     for rowIdx in optionValue:
-                        frame = DataframeActions.applyOnRowIdx(frame, int(rowIdx), applyFunction, applyInclusive)
+                        frame = DataframeActions.applyOnRowIdx(frame, int(rowIdx), applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_rows':
                     for rowName in optionValue:
                         rowIdx = DataframeActions.getRowIdx(frame, rowName, selectMode)[0]
-                        frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive)
+                        frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_icolumns':
                     if 'all' in optionValue:
                         optionValue = range(frame.shape[1])
                     for colIdx in optionValue:
-                        frame = DataframeActions.applyOnColumnIdx(frame, int(colIdx), applyFunction, applyInclusive)
+                        frame = DataframeActions.applyOnColumnIdx(frame, int(colIdx), applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'apply_columns':
                     for colName in optionValue:
                         columnIdx = DataframeActions.getColumnIdx(frame, colName, selectMode)[0]
-                        frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive)
+                        frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive, applyParameter)
                 elif optionName == 'group_by_irow':
                     frame = DataframeActions.groupByRowIdx(frame, optionValue, groupFunction)
                 elif optionName == 'group_by_row':
@@ -1149,6 +1183,8 @@ for input in args.input:
                 groupFunction = optionValue
             elif optionName == 'apply_mode':
                 applyInclusive = optionValue == 'inclusive'
+            elif optionName == 'apply_parameter':
+                applyParameter = optionValue
             elif optionName == 'join':
                 newOptions = copy.deepcopy(inputOptions)
                 newOptions.filenames = []
@@ -1231,8 +1267,8 @@ for input in args.input:
             'palette': args.palette,
             'palette_count': args.palette_count,
             'palette_local': inputOptions.colour_cycle == 'subplot',
-            'palette_reverse': (inputOptions.colour_cycle == 'subplot' and inputOptions.subplot_palette_reverse) or (inputOptions.colour_cycle == 'global' and args.palette_reverse),
-            'palette_index': 0
+            'palette_reverse': args.palette_reverse,
+            'palette_index': args.palette_start
         })
 
     subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'] = max(inputOptions.rowspan, subplotGridDefinition[inputOptions.row][inputOptions.col]['rowspan'])
@@ -1245,8 +1281,11 @@ for input in args.input:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['colours'] = copy.copy(inputOptions.subplot_colours)
     if inputOptions.subplot_palette is not None:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['palette'] = inputOptions.subplot_palette
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['palette_reverse'] = inputOptions.subplot_palette_reverse
     if inputOptions.subplot_palette_count is not None:
         subplotGridDefinition[inputOptions.row][inputOptions.col]['palette_count'] = inputOptions.subplot_palette_count
+    if inputOptions.subplot_palette_start is not None:
+        subplotGridDefinition[inputOptions.row][inputOptions.col]['palette_index'] = inputOptions.subplot_palette_start
 
     inputOptions.subplotTraceIndex = subplotGridDefinition[inputOptions.row][inputOptions.col]['traces']
     subplotGridDefinition[inputOptions.row][inputOptions.col]['traces'] += inputOptions.traceCount
@@ -1310,7 +1349,7 @@ for r in range(1, subplotGrid[1]['max'] + 1):
                 subplot['colours'].reverse()
             if args.theme == 'palette' and args.colour_debug:
                 print(f'    subplot @ [{r}, {c}, local({subplot["palette_local"]})]: ' + ' '.join(subplot['colours']))
-globalPaletteIndex = 0
+globalPaletteIndex = args.palette_start
 
 legendEntries = []
 
@@ -1520,9 +1559,9 @@ for input in data:
             elif (options.use_name is not None):
                 traceName = options.use_name
 
-            showInLegend = args.legend_entries == 'all'
+            showInLegend = options.legend_entries == 'all'
             if traceName not in legendEntries:
-                if args.legend_entries == 'unique':
+                if options.legend_entries == 'unique':
                     showInLegend = True
                 legendEntries.append(traceName)
 

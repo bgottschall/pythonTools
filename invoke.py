@@ -11,12 +11,13 @@ from pathlib import Path
 
 invokePyVersion = '0.1'
 
-treatAsDirectories = [ 'outputs', 'output', 'outdir', 'dir' ]
+treatAsDirectories = ['outputs', 'output', 'outdir', 'dir']
 
 invokeSpec = {}
 currentConfigPath = os.path.curdir
 
-def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory = None):
+
+def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory=None):
     benchSpec = copy.deepcopy(origBenchSpec)
     if isinstance(source['dir'], str):
         # If a path is given use it
@@ -38,20 +39,20 @@ def updateBenchSpec(origBenchSpec: dict, source: dict, subdirectory = None):
     for k in ['params', 'precmd', 'postcmd']:
         if isinstance(source[k], str):
             benchSpec[k] = source[k]
-        elif source[k] == False:
+        elif not source[k]:
             benchSpec[k] = None
 
     return benchSpec
 
 
-def batchReplace(target, what: dict, wrapper = '%'):
+def batchReplace(target, what: dict, wrapper='%'):
     if isinstance(target, dict):
         for x in target:
             for k, v in what.items():
                 target[x] = str(target[x]).replace(wrapper + k + wrapper, v)
     elif isinstance(target, str):
         for k, v in what.items():
-            target = target.replace(wrapper + k + wrapper, v);
+            target = target.replace(wrapper + k + wrapper, v)
     return target
 
 
@@ -91,6 +92,7 @@ def loadSpecification(spec: dict):
         else:
             invokeSpec[k] = spec[k]
 
+
 parser = ArgumentParser(description="Invoke and control benchmarks")
 parser.add_argument("-c", "--config", help="use this invoke specification", action="append", default=[])
 parser.add_argument("-w", "--wrapper", help="Use these invoke wrappers", action="append", default=[])
@@ -115,7 +117,7 @@ parser.add_argument("--version", help="print version number", action="store_true
 
 parser.add_argument("benchmarks", help="Invoke these benchmarks", nargs="*", default=[])
 
-args = parser.parse_args();
+args = parser.parse_args()
 
 if args.version:
     print(f'invoke.py version {invokePyVersion} -- sourced at https://github.com/bgottschall/pythonTools/blob/master/invoke.py')
@@ -133,11 +135,11 @@ if args.compile:
 
 if len(args.config) == 0:
     if os.path.exists(os.path.curdir + '/' + 'invoke.spec.json'):
-        args.config = [os.path.curdir + '/' + 'invoke.spec.json'];
+        args.config = [os.path.curdir + '/' + 'invoke.spec.json']
     elif os.path.exists(os.path.dirname(__file__) + '/' + 'invoke.spec.json'):
-        args.config = [os.path.dirname(__file__) + '/' + 'invoke.spec.json'];
+        args.config = [os.path.dirname(__file__) + '/' + 'invoke.spec.json']
     else:
-        raise Exception(f'Could not find any invoke specification files!')
+        raise Exception('Could not find any invoke specification files!')
 
 for config in args.config:
     if not os.path.exists(config):
@@ -153,18 +155,16 @@ for config in args.config:
         print(f"Could not parse configuration file {config}", file=sys.stderr)
         raise
 
-
-
 if not isinstance(invokeSpec, dict):
     raise Exception('Invalid invoke specification')
 
 benchmarksAvailable = False
 
-#Sanitize Config to make parsing easier
+# Sanitize Config to make parsing easier
 ensureDictionaryKeys(invokeSpec, ['specs', 'variables', 'wrappers', 'environments', 'suites'])
 if invokeSpec['specs'] is not None:
     for spec in invokeSpec['specs']:
-        ensureDictionaryKeys(spec, ['dir', 'precmd', 'postcmd', 'environment', 'stdout', 'stderr', 'input' , 'benchmarks'])
+        ensureDictionaryKeys(spec, ['dir', 'precmd', 'postcmd', 'environment', 'stdout', 'stderr', 'input', 'benchmarks'])
         if spec['benchmarks'] is not None:
             benchmarksAvailable = benchmarksAvailable or len(spec['benchmarks']) > 0
             for b in spec['benchmarks']:
@@ -259,7 +259,7 @@ if args.specs:
 
 if not benchmarksAvailable:
     raise Exception('No benchmarks are specified in the configuration!')
-   
+
 for suite in args.suite:
     if suite not in invokeSpec['suites']:
         raise Exception(f"Suite '{suite}' not found")
@@ -281,7 +281,7 @@ if len(args.benchmarks) == 0:
 # Make sure its all string
 for v in invokeSpec['variables']:
     invokeSpec['variables'][v] = str(invokeSpec['variables'][v])
-           
+
 
 # Lets build the default Invoke CMD line
 defaultInvoke = ''
@@ -324,14 +324,14 @@ if args.compile:
     shellScript = '#!/bin/sh\n\n'
 
 if args.compile and len(globalEnvironment) > 0:
-    shellScript +='export '
+    shellScript += 'export '
     for k in globalEnvironment:
         shellScript += f'{k}={globalEnvironment[k]} '
     shellScript += '\n'
 
 if args.simulate and len(globalEnvironment) > 0:
     print('/:$ export ', end='')
-    for k in glonalEnvironment:
+    for k in globalEnvironment:
         print(f'{k}={globalEnvironment[k]} ', end='')
     print('')
 
@@ -365,13 +365,13 @@ for benchmark in args.benchmarks:
         subEnvironment = {}
 
         benchSpecL0 = {
-            'dir' : spec['dir'] if spec['dir'] is not None else os.path.curdir,
-            'exec' : None,
-            'params' : None,
-            'precmd' : spec['precmd'],
-            'postcmd' : spec['postcmd'],
-            'stdout' : spec['stdout'],
-            'stderr' : spec['stderr'],
+            'dir': spec['dir'] if spec['dir'] is not None else os.path.curdir,
+            'exec': None,
+            'params': None,
+            'precmd': spec['precmd'],
+            'postcmd': spec['postcmd'],
+            'stdout': spec['stdout'],
+            'stderr': spec['stderr'],
             'environment': {},
             'disabled': False,
         }
@@ -382,12 +382,12 @@ for benchmark in args.benchmarks:
                 if v.count('%') >= 2:
                     v = batchReplace(v, invokeSpec['variables'])
                 if v.count('%') >= 2:
-                    benchSpec['environment'][k] = v
+                    benchSpecL0['environment'][k] = v
                 else:
                     subEnvironment[k] = v
 
             if args.compile and len(subEnvironment) > 0:
-                shellScript +='export '
+                shellScript += 'export '
                 for k in subEnvironment:
                     shellScript += f'{k}={subEnvironment[k]} '
                 shellScript += '\n'
@@ -397,7 +397,6 @@ for benchmark in args.benchmarks:
                 for k in subEnvironment:
                     print(f'{k}={subEnvironment[k]} ', end='')
                 print('')
-
 
         if len(args.input) == 0:
             if spec['input'] is None:
@@ -409,7 +408,6 @@ for benchmark in args.benchmarks:
             useInputs = spec['input'] if isinstance(spec['input'], list) else [spec['input']]
         else:
             useInputs = args.input
-
 
         benchSpecL1 = updateBenchSpec(benchSpecL0, spec['benchmarks'][benchmark], benchmark)
 
@@ -459,7 +457,7 @@ for benchmark in args.benchmarks:
                 else:
                     sDate = datetime.now().strftime("%Y-%m-%d_%H%M%S")
 
-                replaceVars = {**{'counter' : str(invokeCounter), 'workload': str(workload), 'input' : str(input), 'benchmark': str(benchmark), 'now': sDate}, **invokeSpec['variables']}
+                replaceVars = {**{'counter': str(invokeCounter), 'workload': str(workload), 'input': str(input), 'benchmark': str(benchmark), 'now': sDate}, **invokeSpec['variables']}
 
                 benchSpec['dir'] = batchReplace(benchSpec['dir'], replaceVars)
                 benchSpec['exec'] = batchReplace(benchSpec['exec'], replaceVars)
@@ -493,7 +491,7 @@ for benchmark in args.benchmarks:
                 if args.compile:
                     shellScript += f"# Execute workload {workload} of the '{input}' input of benchmark '{benchmark}'\n"
                     if sDate == '${NOW}':
-                        shellScript +='NOW="$(date +\'%Y-%m-%d_%H%M%S\')"\n'
+                        shellScript += 'NOW="$(date +\'%Y-%m-%d_%H%M%S\')"\n'
 
                 if args.verbose and not args.prepare:
                     print(f"Executing benchmark '{benchmark}', input '{input}', workload {workload}")
@@ -511,7 +509,6 @@ for benchmark in args.benchmarks:
                 elif os.path.realpath(benchSpec['exec']) != os.path.realpath(benchSpec['dir'] + '/' + execName):
                     print(f"WARNING: target executable '{benchSpec['dir'] + '/' + execName}' differs from specified executable '{benchSpec['exec']}'", file=sys.stderr)
 
-
                 invokeCmd = defaultInvoke + './' + execName
                 if len(benchSpec['params']) > 0:
                     invokeCmd += ' ' + benchSpec['params']
@@ -523,7 +520,6 @@ for benchmark in args.benchmarks:
                 for d in treatAsDirectories:
                     if d in replaceVars:
                         replaceVars[d] = os.path.abspath(replaceVars[d]) + '/' if os.path.isabs(replaceVars[d]) else os.path.relpath(replaceVars[d], benchSpec['dir']) + '/'
-
 
                 # Postprocess the invoke cmd lines after variables
                 invokeCmd = batchReplace(invokeCmd, replaceVars)
@@ -554,7 +550,6 @@ for benchmark in args.benchmarks:
                         invokeCmd += f" >>{benchSpec['stdout']}"
                     else:
                         benchSpec['stdout'] = open(benchSpec['stdout'] if os.path.isabs(benchSpec['stdout']) else benchSpec['dir'] + '/' + benchSpec['stdout'], 'a')
-
 
                 if benchSpec['stderr'] is not None:
                     # Append to invokeCmd or open it for redirected output

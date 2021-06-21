@@ -499,8 +499,8 @@ parserFileOptions = parser.add_argument_group('file parsing options')
 
 inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input file to parse", nargs="+", action=ParentAction, required=True)
 # Per File Parsing Arguments
-parserFileOptions.add_argument("--special-column-start", help="special columns (or ignore columns) starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--ignore-line-start", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--special-column-prefix", help="special columns (or ignore columns) starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--comment", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
@@ -725,6 +725,8 @@ parserPlotGlobalOptions.add_argument("--legend-hide", help="hides legend", defau
 parserPlotGlobalOptions.add_argument("--legend-show", help="forces legend to show up", default=None, action="store_true")
 parserPlotGlobalOptions.add_argument("--legend-vertical", help="horizontal legend", default=None, action="store_true")
 parserPlotGlobalOptions.add_argument("--legend-horizontal", help="vertical legend", default=None, action="store_true")
+parserPlotGlobalOptions.add_argument("--legend-order", help="trace order of legend entries (default grouped)", type=str, choices=['normal', 'reversed', 'grouped', 'grouped+reversed', 'reversed+grouped'], default='grouped')
+parserPlotGlobalOptions.add_argument("--legend-groupgap", help="gap between legend groups (default %(default)s)", type=int, choices=Range(0, None), default=10)
 
 parserPlotGlobalOptions.add_argument("--margins", help="sets all margins", type=int, choices=Range(0, None), default=None)
 parserPlotGlobalOptions.add_argument("--margin-l", help="sets left margin", type=int, choices=Range(0, None), default=None)
@@ -768,8 +770,8 @@ for input in args.input:
     options.ignore_icolumns = list(set(options.ignore_icolumns))
     options.ignore_columns = list(set(options.ignore_columns))
 
-    options.traceSpecialColumns = [options.special_column_start + x for x in traceSpecialColumns]
-    options.frameSpecialColumns = [options.special_column_start + x for x in frameSpecialColumns]
+    options.traceSpecialColumns = [options.special_column_prefix + x for x in traceSpecialColumns]
+    options.frameSpecialColumns = [options.special_column_prefix + x for x in frameSpecialColumns]
 
     if (options.opacity == 'auto' and ((options.plot == 'box' and 'overlay' in args.box_mode) or
                                        (options.plot == 'violin' and 'overlay' in args.violin_mode) or
@@ -927,10 +929,8 @@ for input in args.input:
         except Exception:
             raise Exception(f'Could not open file {filename}!')
 
-        rawData = rawFile.read()
-        rawFile.close()
         try:
-            frame = pickle.loads(rawData)
+            frame = pickle.load(xopen.xopen(filename, mode='rb'))
         except Exception:
             frame = None
 
@@ -953,51 +953,20 @@ for input in args.input:
             else:
                 inputFrames.append((options, frame))
         else:
-            fFile = rawData.decode('utf-8').replace('\r\n', '\n')
-            options = copy.deepcopy(inputOptions)
-
-            # Check if we can detect the data delimiter if it was not passed in manually
-            if options.separator is None:
-                # Try to find delimiters
-                for tryDelimiter in detectDelimiter:
-                    if sum([x.count(tryDelimiter) for x in fFile.split('\n')]) > 0:
-                        options.separator = tryDelimiter
-                        break
-                # Fallback if there is just one column and no index column
-                options.separator = ' ' if options.separator is None and options.no_index else options.separator
-                if (options.separator is None):
-                    raise Exception('Could not identify data separator, please specify it manually')
-
-            # Data delimiters clean up, remove multiple separators and separators from the end
-            reDelimiter = re.escape(options.separator)
-            fFile = re.sub(reDelimiter + '{1,}\n', '\n', fFile)
-            # Tab and space delimiters, replace multiple occurences
-            if options.separator == ' ' or options.separator == '\t':
-                fFile = re.sub(reDelimiter + '{2,}', options.separator, fFile)
-            # Parse the file
-            fData = [
-                [None if val.lower() in considerAsNaN else val for val in x.split(options.separator)]
-                for x in fFile.split('\n')
-                if (len(x) > 0) and  # Ignore empty lines
-                (len(options.ignore_line_start) > 0 and not x.startswith(options.ignore_line_start)) and  # Ignore lines starting with
-                (options.no_index or x.count(options.separator) > 0)  # Ignore lines which contain no data
-            ]
-            fData = [[float(val) if isFloat(val) else val for val in row] for row in fData]
-            if len(fData) < 1 or len(fData[0]) == 0 or (len(fData[0]) < 2 and not options.no_index):
-                raise Exception(f'Could not extract any data from file {filename}')
-
-            fData = numpy.array(fData, dtype=object)
-
-            frame = pandas.DataFrame(fData)
+            frame = pandas.read_csv(filename,
+                                    sep=options.separator,
+                                    comment=options.comment,
+                                    header=None,
+                                    index_col=0 if not options.no_index else None,
+                                    engine='python')
 
             if (not options.no_columns):
                 frame.columns = frame.iloc[0]
-                frame.columns.name = ''
+                frame.columns.name = frame.iloc[0].name
                 frame = DataframeActions.dropRowsByIdx(frame, 0)
 
             if (not options.no_index):
-                frame.index = frame.iloc[:, 0]
-                frame = DataframeActions.dropColumnsByIdx(frame, 0)
+                frame.index.name = None
 
             options.filenames = [filename]
             options.frameCount = 1
@@ -1471,7 +1440,7 @@ for input in data:
                 continue
             for colIndex in range(len(frame.columns)):
                 colName = str(frame.columns[colIndex])
-                if (colName == options.special_column_start + 'category') and _categories is None:
+                if (colName == options.special_column_prefix + 'category') and _categories is None:
                     _categories = ['' if x is None else x for x in frame.iloc[:, colIndex].values.tolist()]
 
         for colIndex, _ in enumerate(frame.columns):
@@ -1496,19 +1465,19 @@ for input in data:
                 nextCol = str(frame.columns[nextColIndex])
                 if (nextCol not in options.traceSpecialColumns):
                     break
-                if (nextCol == options.special_column_start + 'error') and (_errors_pos is None):
+                if (nextCol == options.special_column_prefix + 'error') and (_errors_pos is None):
                     _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-                elif (nextCol == options.special_column_start + 'error+') and (_errors_pos is None):
+                elif (nextCol == options.special_column_prefix + 'error+') and (_errors_pos is None):
                     _errors_symmetric = False
                     _errors_pos = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-                elif (nextCol == options.special_column_start + 'error-') and (_errors_neg is None):
+                elif (nextCol == options.special_column_prefix + 'error-') and (_errors_neg is None):
                     _errors_symmetric = False
                     _errors_neg = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-                elif (nextCol == options.special_column_start + 'offset') and (_bases is None):
+                elif (nextCol == options.special_column_prefix + 'offset') and (_bases is None):
                     _bases = [x if (x is not None) else 0 for x in frame.iloc[:, nextColIndex].values.tolist()]
-                elif (nextCol == options.special_column_start + 'label') and (_labels is None):
+                elif (nextCol == options.special_column_prefix + 'label') and (_labels is None):
                     _labels = frame.iloc[:, nextColIndex].values.tolist()
-                elif (nextCol == options.special_column_start + 'colour') and (_colours is None) and (frameTraceIndex >= len(options.trace_colours)):
+                elif (nextCol == options.special_column_prefix + 'colour') and (_colours is None) and (frameTraceIndex >= len(options.trace_colours)):
                     _colours = frame.iloc[:, nextColIndex].values.tolist()
                     _colours = [c if c is not None else fillcolour for c in _colours]
 
@@ -1795,7 +1764,7 @@ plotScript.write(f"fig.update_layout(barmode='{args.bar_mode}', boxmode='{args.b
 plotScript.write(f"fig.update_layout(bargap={args.bar_gap}, bargroupgap={args.bar_group_gap}, boxgap={args.box_gap}, boxgroupgap={args.box_group_gap}, violingap={args.violin_gap}, violingroupgap={args.violin_group_gap})\n")
 
 plotScript.write("\n# Layout Legend\n")
-plotScript.write(f"fig.update_layout(showlegend={args.legend_show})\n")
+plotScript.write(f"fig.update_layout(showlegend={args.legend_show}, legend_traceorder='{args.legend_order}', legend_tracegroupgap={args.legend_groupgap})\n")
 plotScript.write(f"{'# ' if args.legend_y_anchor is None else ''}fig.update_layout(legend_yanchor='{'auto' if args.legend_y_anchor is None else args.legend_y_anchor}')\n")
 plotScript.write(f"{'# ' if args.legend_x_anchor is None else ''}fig.update_layout(legend_xanchor='{'auto' if args.legend_x_anchor is None else args.legend_x_anchor}')\n")
 plotScript.write(f"fig.update_layout(legend=dict(x={args.legend_x}, y={args.legend_y}, orientation='{'v' if args.legend_vertical else 'h'}', bgcolor='rgba(255,255,255,0)'))\n")

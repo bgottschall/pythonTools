@@ -968,6 +968,8 @@ for input in args.input:
             if (not options.no_index):
                 frame.index.name = None
 
+            frame = frame.apply(pandas.to_numeric, errors='ignore')
+
             options.filenames = [filename]
             options.frameCount = 1
             options.frameIndex = inputOptions.frameCount

@@ -26,7 +26,8 @@ import tempfile
 import pandas
 import numpy
 import os
-import re
+import io
+import gc
 import subprocess
 import statistics
 import sys
@@ -501,7 +502,7 @@ inputFileArgument = parser.add_argument('-i', '--input', type=str, help="input f
 # Per File Parsing Arguments
 parserFileOptions.add_argument("--special-column-prefix", help="special columns (or ignore columns) starting with (default %(default)s)", type=str, default='_', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--comment", help="ignores lines starting with (default %(default)s)", type=str, default='#', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--separator", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--delimiter", help="data delimiter (auto detected by default)", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-columns", help="do not use a column row", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--no-index", help="do not use a index column", default=False, sticky_default=True, nargs=0, sub_action="store_true", action=ChildAction, parent=inputFileArgument)
 
@@ -924,13 +925,13 @@ for input in args.input:
     inputOptions.frameIndex = 0
     inputFrames = []
     for filename in inputFileNames:
-        try:
-            rawFile = xopen.xopen(filename, mode='rb')
-        except Exception:
-            raise Exception(f'Could not open file {filename}!')
+        if not os.path.exists(filename):
+            raise Exception(f'Could not find file {filename}!')
+
+        buf = xopen.xopen(filename, mode='rb').read()
 
         try:
-            frame = pickle.load(xopen.xopen(filename, mode='rb'))
+            frame = pickle.loads(buf)
         except Exception:
             frame = None
 
@@ -953,8 +954,8 @@ for input in args.input:
             else:
                 inputFrames.append((options, frame))
         else:
-            frame = pandas.read_csv(filename,
-                                    sep=options.separator,
+            frame = pandas.read_csv(io.BytesIO(buf),
+                                    sep=options.delimiter,
                                     comment=options.comment,
                                     header=None,
                                     index_col=0 if not options.no_index else None,
@@ -976,6 +977,9 @@ for input in args.input:
             frame = frame.fillna(value=numpy.nan)
             inputFrames.append((options, frame))
             inputOptions.frameCount += 1
+
+        del buf
+    gc.collect()
 
     selectMode = input['args'].select_mode
     sortFunction = input['args'].sort_function
@@ -1164,7 +1168,7 @@ for input in args.input:
                 inputFrames = frontDefocusedFrames + [(newOptions, joinedFrame)] + backDefocusedFrames
                 focusedFrames = [len(frontDefocusedFrames)]
             elif optionName == 'file':
-                DataframeActions.framesToCSV([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, inputOptions.separator, args.quiet, outputPrecision)
+                DataframeActions.framesToCSV([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, inputOptions.delimiter, args.quiet, outputPrecision)
                 doneSomething = True
             elif optionName == 'pickle':
                 DataframeActions.framesToPickle([frame for (_, frame) in [inputFrames[x] for x in focusedFrames]], optionValue, args.quiet)

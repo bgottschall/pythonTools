@@ -1942,7 +1942,7 @@ if len(args.output) > 0:
     for output in args.output:
         outputFormat = output.lower().split('.')[-1]
         if outputFormat == 'html':
-            fig.write_html(fig, output)
+            fig.write_html(output)
         else:
             fig.write_image(output, format=outputFormat, width=args.width, height=args.height)
         print(f'Saved to {output}')

@@ -841,7 +841,6 @@ parserPlotGlobalOptions.add_argument("--width", help="plot width", type=int, def
 parserPlotGlobalOptions.add_argument("--height", help="plot height", type=int)
 
 parserOutputOptions = parser.add_argument_group('output options')
-parserOutputOptions.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parserOutputOptions.add_argument("--script", help="save self-contained plotting script", type=str, default=None)
 parserOutputOptions.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
 parserOutputOptions.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png, py, ...)", default=[], nargs='+')
@@ -1493,18 +1492,16 @@ import tempfile
 import argparse
 import plotly
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
 
-import urllib.request
-import glob
-import re
-import platform
+# Disable MathJAX to avoid unnecessary message in pdf output
+pio.kaleido.scope.mathjax = None
 
 parser = argparse.ArgumentParser(description="plots the contained figure")
 parser.add_argument("--font-size", help="font size (default %(default)s)", type=int, default={args.font_size})
 parser.add_argument("--font-colour", help="font colour (default %(default)s)", default='{args.font_colour}')
 parser.add_argument("--font-family", help="font family (default %(default)s)", default='{args.font_family}')
-parser.add_argument("--orca", help="path to plotly orca (https://github.com/plotly/orca)", type=str, default=None)
 parser.add_argument("--width", help="width of output file (default %(default)s)", type=int, default={args.width})
 parser.add_argument("--height", help="height of output (default %(default)s)", type=int, default={args.height})
 parser.add_argument("--output", "-o", help="output file (html, png, jpeg, pdf...) (default %(default)s)", type=str, nargs="+", default={args.output})
@@ -1926,105 +1923,9 @@ filename, fileext = os.path.splitext(__file__)
 if (os.path.exists(f'{filename}_addon{fileext}')):
     exec(open(f'{filename}_addon{fileext}').read())
 
-if args.orca is None and os.getenv('PLOTLY_ORCA') is not None:
-    args.orca = os.getenv('PLOTLY_ORCA')
-""")
-
-if args.orca is not None:
-    plotScript.write(f"""
-# An initial orca version is provided by the plot author
-if args.orca is None:
-    args.orca = '{args.orca}'
-""")
-
-
-plotScript.write(f"""
-# Output and export below this line
-plotPyMaster = "{os.path.realpath(__file__)}"
 """)
 
 plotScript.write("""
-
-def getLatestPlotlyOrca(destination=".", quiet=False):
-    fetchUrl = "https://github.com/plotly/orca/releases/latest"
-    if not quiet:
-        print(f"Fetching latest plotly orca release from {fetchUrl}", file=sys.stderr)
-    lastReleases = urllib.request.urlopen(fetchUrl).read().decode()
-    appImage = re.search(r'a href="(.+\\.AppImage)"', lastReleases)
-    if not appImage:
-        raise Exception('Could not locate latest plotly orca AppImage release at {fetchUrl}')
-    fileAppImage = os.path.realpath(destination) + '/' + os.path.basename(appImage.group(1))
-    urlAppImage = "https://github.com" + appImage.group(1)
-    if not quiet:
-        print(f"Downloading {urlAppImage} to {fileAppImage}", file=sys.stderr)
-    urllib.request.urlretrieve(urlAppImage, fileAppImage)
-    os.chmod(fileAppImage, 0o755)
-    return fileAppImage
-
-
-def getValidOrca(orcas=['orca']):
-    if not isinstance(orcas, list):
-        orcas = [orcas]
-    norcas = []
-    for orca in orcas:
-        if '*' in orca:
-            norcas += glob.glob(orca)
-        else:
-            norcas.append(orca)
-    for orca in norcas:
-        fBin = shutil.which(orca)
-        if fBin is not None:
-            fRun = subprocess.run([orca, '--help'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            if fRun.returncode == 0 and "Plotly's image-exporting utilities" in fRun.stdout.decode():
-                return fBin
-
-
-def exportFigure(fig, width, height, exportFile, orca='orca'):
-    if exportFile.lower().endswith('.html'):
-        fig.write_html(exportFile)
-        return
-    else:
-        tmpFd, tmpFile = tempfile.mkstemp()
-        try:
-            exportFile = os.path.abspath(exportFile)
-            exportDir = os.path.dirname(exportFile)
-            exportFilename = os.path.basename(exportFile)
-            fileName, fileExtension = os.path.splitext(exportFilename)
-            fileExtension = fileExtension.lstrip('.').lower()
-            fileExtension = 'jpeg' if fileExtension == 'jpg' else fileExtension
-            go.Figure(fig).write_json(tmpFile)
-            cmd = [orca, 'graph', tmpFile, '--output-dir', exportDir, '--output', fileName, '--format', fileExtension]
-            if width is not None:
-                cmd.extend(['--width', f'{width}'])
-            if height is not None:
-                cmd.extend(['--height', f'{height}'])
-            exportRun = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            if exportRun.returncode != 0:
-                print(f'ERROR: failed to export figure to {exportFile}! Unsupported file format?')
-                print(exportRun.stderr.decode('utf-8'))
-                exit(1)
-            if f'{fileName}.{fileExtension}' != exportFilename:
-                os.rename(f'{exportDir}/{fileName}.{fileExtension}', f'{exportDir}/{exportFilename}')
-        finally:
-            os.remove(tmpFile)
-
-
-if len(args.output) > 0 and not all([x.lower().endswith('.html') for x in args.output]):
-    plotPyDir = os.path.dirname(plotPyMaster)
-    searchSpace = ([args.orca] if args.orca is not None else [])
-    searchSpace.extend(['orca', 'plotly-orca', plotPyDir + '/orca*.AppImage', './orca*.AppImage'])
-    args.orca = getValidOrca(searchSpace)
-
-    if args.orca is None:
-        if platform.system() != 'Linux':
-            print("Automatic installation of plotly orca not supported for your platform which is required to export the requested output format. Please manually install plotly orca from https://github.com/plotly/orca and make it available in your environment.")
-            exit(0)
-
-        if args.quiet or not (input("Download latest plotly orca for output format support? [Y/n]: ").lower() in ['y', 'yes', '']):
-            print("Requested output format requires plotly orca, please provide it manually from https://github.com/plotly/orca!")
-            exit(0)
-
-        args.orca = getLatestPlotlyOrca(plotPyDir if os.path.isdir(plotPyDir) else ".")
 
 if args.browser:
     fig.show()
@@ -2039,7 +1940,11 @@ if len(args.output) > 0:
             args.quiet = True
 
     for output in args.output:
-        exportFigure(fig, args.width, args.height, output, args.orca)
+        outputFormat = output.lower().split('.')[-1]
+        if outputFormat == 'html':
+            fig.write_html(fig, output)
+        else:
+            fig.write_image(output, format=outputFormat, width=args.width, height=args.height)
         print(f'Saved to {output}')
         if not args.quiet:
             try:

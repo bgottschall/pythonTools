@@ -10,13 +10,12 @@ PIP3 packages:
 * plotly
 * numpy
 * pandas
-* colour
-
+* xopen
+* seaborn
+* kaleido
 ```
-pip3 install plotly numpy pandas colour xopen
+pip3 install plotly numpy pandas xopen seaborn kaleido
 ```
-
-Plotly also requires a special orca version to export any other format than HTML. The plotly orca will be automatically downloaded up on first usage or can be retrieved from https://github.com/plotly/orca/releases/latest .
 
 ## Usage
 

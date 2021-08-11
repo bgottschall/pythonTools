@@ -179,6 +179,10 @@ def SliceType(translator=defaultSliceTypeTranslator):
             return slice(*tSection)
     return str2slice
 
+def getSliceTypeIds(targetRange: range, slices: list):
+    validIntRange = range(-len(targetRange), len(targetRange))
+    selectedRanges = [targetRange[s] if isinstance(s, slice) else [targetRange[s]] if s in validIntRange else [] for s in slices]
+    return [i for li in selectedRanges for i in li]
 
 def updateRange(_range, dataList):
     if not isinstance(_range, list):
@@ -212,18 +216,12 @@ class DataframeActions:
     def sliceToColumnIds(dataframe, slices):
         if not isinstance(slices, list):
             slices = [slices]
-        validRange = range(dataframe.shape[1])
-        validIntRange = range(-dataframe.shape[1], dataframe.shape[1])
-        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in slices]
-        return [i for li in selectedRanges for i in li]
+        return getSliceTypeIds(range(dataframe.shape[1]), slices)
 
     def sliceToRowIds(dataframe, slices):
         if not isinstance(slices, list):
             slices = [slices]
-        validRange = range(dataframe.shape[0])
-        validIntRange = range(-dataframe.shape[0], dataframe.shape[0])
-        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in slices]
-        return [i for li in selectedRanges for i in li]
+        return getSliceTypeIds(range(dataframe.shape[0]), slices)
 
     def dropColumnsByIds(dataframe, colIds):
         filterColumns = numpy.array([False if i in colIds else True for i in range(dataframe.shape[1])])
@@ -1263,15 +1261,9 @@ for input in args.input:
                 inputFrames[_index] = (frameOptions, frame)
         else:
             if optionName == 'focus_frames':
-                validRange = range(len(inputFrames))
-                validIntRange = range(-len(inputFrames), len(inputFrames))
-                selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in optionValue]
-                focusedFrames = sorted([i for li in selectedRanges for i in li])
+                focusedFrames = sorted(getSliceTypeIds(range(len(inputFrames)), optionValue))
             elif optionName == 'defocus_frames':
-                validRange = range(len(inputFrames))
-                validIntRange = range(-len(inputFrames), len(inputFrames))
-                selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in optionValue]
-                for f in [i for li in selectedRanges for i in li]:
+                for f in getSliceTypeIds(range(len(inputFrames)), optionValue):
                     if f in focusedFrames:
                         focusedFrames.remove(f)
             elif optionName == 'output_precision':

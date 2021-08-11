@@ -213,14 +213,16 @@ class DataframeActions:
         if not isinstance(slices, list):
             slices = [slices]
         validRange = range(dataframe.shape[1])
-        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] for s in slices]
+        validIntRange = range(-dataframe.shape[1], dataframe.shape[1])
+        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in slices]
         return [i for li in selectedRanges for i in li]
 
     def sliceToRowIds(dataframe, slices):
         if not isinstance(slices, list):
             slices = [slices]
         validRange = range(dataframe.shape[0])
-        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] for s in slices]
+        validIntRange = range(-dataframe.shape[0], dataframe.shape[0])
+        selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in slices]
         return [i for li in selectedRanges for i in li]
 
     def dropColumnsByIds(dataframe, colIds):
@@ -407,7 +409,6 @@ class DataframeActions:
                     dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1)
                 else:
                     applyRows = [dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce') for rowIdx in applyRowIds]
-                    print(targetRowIds)
                     for applyRow in applyRows:
                         dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda row: getattr(row, function)(applyRow), axis=1)
         return dataframe
@@ -1106,10 +1107,15 @@ for input in args.input:
                 elif optionName == 'index_column':
                     columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode)
                     if len(columnIds) > 1 and not args.quiet:
-                        print('WARNING:', file=sys.stderr)
-                    frame = DataframeActions.setIndexColumnByIdx(frame, columnIds[0])
+                        print('WARNING: cannot set multiple index columns', file=sys.stderr)
+                    if (len(columnIds) > 0):
+                        frame = DataframeActions.setIndexColumnByIdx(frame, columnIds[0])
                 elif optionName == 'index_icolumn':
-                    frame = DataframeActions.setIndexColumnByIdx(frame, optionValue)
+                    columnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    if len(columnIds) > 1 and not args.quiet:
+                        print('WARNING: cannot set multiple index columns', file=sys.stderr)
+                    if (len(columnIds) > 0):
+                        frame = DataframeActions.setIndexColumnByIdx(frame, columnIds[0])
                 elif optionName == 'ignore_columns':
                     columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode, True)
                     frame = DataframeActions.dropColumnsByIds(frame, columnIds)
@@ -1132,7 +1138,7 @@ for input in args.input:
                     rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
                     frame = DataframeActions.filterRowsByIds(frame, rowIds)
                 elif optionName == 'select_irows':
-                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
+                    rowIds = DataframeActions.sliceToRowIds(frame, optionValue)
                     frame = DataframeActions.filterRowsByIds(frame, rowIds)
                 elif optionName == 'reverse_columns':
                     frame = DataframeActions.reverseColumns(frame)
@@ -1171,25 +1177,29 @@ for input in args.input:
                     if len(applyColumnIds) > 1 and not args.quiet:
                         print('WARNING:', file=sys.stderr)
                     targetColumnIds = DataframeActions.sliceToColumnIds(frame, slice(None))
-                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
+                    if len(applyColumnIds) > 0 and len(targetColumnIds) > 0:
+                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
                 elif optionName == 'normalise_to_icolumn':
                     applyColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
                     if (len(applyColumnIds) > 1 and not args.quiet):
                         print('WARNING: can only normalise to a single column', file=sys.stderr)
                     targetColumnIds = DataframeActions.sliceToColumnIds(frame, slice(None))
-                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
+                    if len(applyColumnIds) > 0 and len(targetColumnIds) > 0:
+                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
                 elif optionName == 'normalise_to_row':
                     applyRowIds = DataframeActions.getRowIds(frame, optionValue, selectMode)
                     if len(applyRowIds) > 1 and not args.quiet:
                         print('WARNING:', file=sys.stderr)
                     targetRowIds = DataframeActions.sliceToRowIds(frame, slice(None))
-                    frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
-                elif optionName == 'normalise_to_irow':
+                    if len(applyRowIds) > 0 and len(targetRowIds) > 0:
+                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
+                elif optionName == 'normalise_to_irow':#
                     applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue)
                     if (len(applyRowIds) > 1 and not args.quiet):
                         print('WARNING: can only normalise to a single row', file=sys.stderr)
                     targetRowIds = DataframeActions.sliceToRowIds(frame, slice(None))
-                    frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
+                    if len(applyRowIds) > 0 and len(targetRowIds) > 0:
+                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
                 elif optionName == 'abs':
                     frame = DataframeActions.abs(frame)
                 elif optionName == 'apply_irows':
@@ -1253,11 +1263,15 @@ for input in args.input:
                 inputFrames[_index] = (frameOptions, frame)
         else:
             if optionName == 'focus_frames':
-                validRange = list(range(len(inputFrames)))
-                selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] for s in optionValue]
+                validRange = range(len(inputFrames))
+                validIntRange = range(-len(inputFrames), len(inputFrames))
+                selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in optionValue]
                 focusedFrames = sorted([i for li in selectedRanges for i in li])
             elif optionName == 'defocus_frames':
-                for f in [i for s in optionValue for i in list(range(len(inputFrames))[s])]:
+                validRange = range(len(inputFrames))
+                validIntRange = range(-len(inputFrames), len(inputFrames))
+                selectedRanges = [validRange[s] if isinstance(s, slice) else [validRange[s]] if s in validIntRange else [] for s in optionValue]
+                for f in [i for li in selectedRanges for i in li]:
                     if f in focusedFrames:
                         focusedFrames.remove(f)
             elif optionName == 'output_precision':

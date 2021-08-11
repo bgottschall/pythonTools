@@ -371,9 +371,9 @@ class DataframeActions:
 
                 if function in pandasSelfFunctions:
                     if function == 'abs':
-                        dataframe.iloc[applyRowIds, :] = dataframe.iloc[applyRowIds, :].abs()
+                        dataframe.iloc[applyRowIds, :] = dataframe.iloc[applyRowIds, :].abs().values
                     else:
-                        dataframe.iloc[applyRowIds, :] = getattr(dataframe.iloc[applyRowIds, :], function)(axis=1)
+                        dataframe.iloc[applyRowIds, :] = getattr(dataframe.iloc[applyRowIds, :], function)(axis=1).values
                 elif function in constMap:
                     dataframe.iloc[applyRowIds, :] = constMap[function]
                 elif function == 'polyfit':
@@ -404,11 +404,11 @@ class DataframeActions:
                 if function == 'set':
                     if len(applyRowIds) > 0 and not args.quiet:
                         print('WARNING: only the last row has an effect with apply function set!', file=sys.stderr)
-                    dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1)
+                    dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1).values
                 else:
                     applyRows = [dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce') for rowIdx in applyRowIds]
                     for applyRow in applyRows:
-                        dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda row: getattr(row, function)(applyRow), axis=1)
+                        dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda row: getattr(row, function)(applyRow), axis=1).values
         return dataframe
 
     def applyOnColumns(dataframe, applyColumnIds, targetColumnIds, function='abs', parameter='1', quiet=False):
@@ -434,9 +434,9 @@ class DataframeActions:
 
                 if function in pandasSelfFunctions:
                     if function == 'abs':
-                        dataframe.iloc[:, applyColumnIds] = dataframe.iloc[:, applyColumnIds].abs()
+                        dataframe.iloc[:, applyColumnIds] = dataframe.iloc[:, applyColumnIds].abs().values
                     else:
-                        dataframe.iloc[:, applyColumnIds] = getattr(dataframe.iloc[:, applyColumnIds], function)(axis=0)
+                        dataframe.iloc[:, applyColumnIds] = getattr(dataframe.iloc[:, applyColumnIds], function)(axis=0).values
                 elif function in constMap:
                     dataframe.iloc[:, applyColumnIds] = constMap[function]
                 elif function == 'polyfit':
@@ -467,11 +467,11 @@ class DataframeActions:
                     if function == 'set':
                         if len(applyColumnIds) > 0 and not args.quiet:
                             print('WARNING: only the last column has an effect with apply function set!', file=sys.stderr)
-                        dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda _: dataframe.iloc[applyColumnIds[-1], :], axis=0)
+                        dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda _: dataframe.iloc[:, applyColumnIds[-1]], axis=0).values
                     else:
                         applyColumns = [dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce') for columnIdx in applyColumnIds]
                         for applyColumn in applyColumns:
-                            dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda column: getattr(column, function)(applyColumn), axis=0)
+                            dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda column: getattr(column, function)(applyColumn), axis=0).values
         return dataframe
 
     def addRow(dataframe, name, function='mean', where='back'):
@@ -1190,7 +1190,7 @@ for input in args.input:
                     targetRowIds = DataframeActions.sliceToRowIds(frame, slice(None))
                     if len(applyRowIds) > 0 and len(targetRowIds) > 0:
                         frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
-                elif optionName == 'normalise_to_irow':#
+                elif optionName == 'normalise_to_irow':
                     applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue)
                     if (len(applyRowIds) > 1 and not args.quiet):
                         print('WARNING: can only normalise to a single row', file=sys.stderr)
@@ -1944,7 +1944,7 @@ if len(args.output) > 0:
         if outputFormat == 'html':
             fig.write_html(output)
         else:
-            fig.write_image(output, format=outputFormat, width=args.width, height=args.height)
+            fig.write_image(output, width=args.width, height=args.height)
         print(f'Saved to {output}')
         if not args.quiet:
             try:

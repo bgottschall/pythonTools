@@ -451,7 +451,7 @@ class DataframeActions:
                         if not quiet and fitTarget.isna().values.any():
                             print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
                         fitTarget = fitTarget.fillna(0).to_list()
-                        fitAlong = dataframe.columns.to_list()
+                        fitAlong = dataframe.index.to_list()
                         if not all([isFloat(x) for x in fitAlong]):
                             if not quiet and not indexWarning:
                                 indexWarning = True
@@ -640,7 +640,7 @@ parserFileOptions.add_argument("--data-scale", help="scales data (default %(defa
 parserFileOptions.add_argument("--data-offset", help="offsets data (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--normalise-to", help="normalise data to (default %(default)s)", type=float, default=0, choices=Range(None, None), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--normalise-to-icolumn", help="normalise to this column index", type=SliceType, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--normalise-to-icolumn", help="normalise to this column index", type=SliceType(), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-column", help="normalise to this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-irow", help="normalise to this row index", type=SliceType(), default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--normalise-to-row", help="normalise to this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)

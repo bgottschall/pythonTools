@@ -243,7 +243,13 @@ class DataframeActions:
         columnIds = []
         for col in columns:
             if col not in [str(x) for x in dataframe.columns]:
-                if not ignore_errors:
+                isSlice = True
+                try:
+                    s = SliceType()(col)
+                    columnIds.extend(DataframeActions.sliceToColumnIds(dataframe, s))
+                except Exception:
+                    isSlice = False
+                if not isSlice and not ignore_errors:
                     raise Exception(f'Could not find column name {col}')
             else:
                 selection = reversed(list(enumerate(dataframe.columns.tolist()))) if mode == 'last' else enumerate(dataframe.columns.tolist())
@@ -260,7 +266,13 @@ class DataframeActions:
         rowIds = []
         for row in rows:
             if row not in [str(x) for x in dataframe.index]:
-                if not ignore_errors:
+                isSlice = True
+                try:
+                    s = SliceType()(row)
+                    rowIds.extend(DataframeActions.sliceToRowIds(dataframe, s))
+                except Exception:
+                    isSlice = False
+                if not isSlice and not ignore_errors:
                     raise Exception(f'Could not find row name {row}')
             else:
                 selection = reversed(list(enumerate(dataframe.index.tolist()))) if mode == 'last' else enumerate(dataframe.index.tolist())
@@ -445,7 +457,7 @@ class DataframeActions:
                 # All other functions are computations between applyColumnIds and targetColumnIds
                 if len(targetColumnIds) == 0:
                     # If targetColumnIds is empty, fill it with all columns not in applyColumnIds
-                    targetColumnIds = list(range(dataframe.shape[0]))
+                    targetColumnIds = list(range(dataframe.shape[1]))
                     targetColumnIds = [r for r in targetColumnIds if r not in applyColumnIds]
                 if len(targetColumnIds) > 0:
                     if function == 'set':

@@ -165,16 +165,19 @@ class Range(object):
         return ret + (', or ' + ', '.join(self.orValues) if self.orValues is not None and len(self.orValues) > 0 else '')
 
 
-def str2slice(value):
-    if value == 'all':
-        return slice(None)
-    try:
-        return int(value)
-    except ValueError:
-        tSection = [int(s) if s else None for s in value.split(':')]
-        if len(tSection) > 3:
-            raise ValueError(f'{value} is not a valid slice notation')
-        return slice(*tSection)
+defaultSliceTypeTranslator = {'all' : lambda v: slice(None)}
+def SliceType(translator=defaultSliceTypeTranslator):
+    def str2slice(value):
+        if value in translator:
+            return translator[value](value)
+        try:
+            return int(value)
+        except ValueError:
+            tSection = [int(s) if s else None for s in value.split(':')]
+            if len(tSection) > 3:
+                raise ValueError(f'{value} is not a valid slice notation')
+            return slice(*tSection)
+    return str2slice
 
 
 def updateRange(_range, dataList):
@@ -220,28 +223,24 @@ class DataframeActions:
         ranges = [r for r in [range(dataframe.shape[0])[s] for s in slices]]
         return [i for r in ranges for i in list(r)]
 
-    def dropColumnsByIdx(dataframe, columns):
-        selectedColumns = DataframeActions.sliceToColumnIds(dataframe, columns)
-        filterColumns = numpy.array([False if i in selectedColumns else True for i in range(dataframe.shape[1])])
+    def dropColumnsByIds(dataframe, colIds):
+        filterColumns = numpy.array([False if i in colIds else True for i in range(dataframe.shape[1])])
         return dataframe.loc[:, filterColumns]
 
-    def filterColumnsByIdx(dataframe, columns):
-        selectedColumns = numpy.array(DataframeActions.sliceToColumnIds(dataframe, columns))
-        return dataframe.iloc[:, selectedColumns]
+    def filterColumnsByIds(dataframe, colIds):
+        return dataframe.iloc[:, colIds]
 
-    def dropRowsByIdx(dataframe, rows):
-        selectedRows = DataframeActions.sliceToRowIds(dataframe, rows)
-        filterRows = numpy.array([False if i in selectedRows else True for i in range(dataframe.shape[0])])
+    def dropRowsByIds(dataframe, rowIds):
+        filterRows = numpy.array([False if i in rowIds else True for i in range(dataframe.shape[0])])
         return dataframe.iloc[filterRows, :]
 
-    def filterRowsByIdx(dataframe, rows):
-        selectedRows = numpy.array(DataframeActions.sliceToRowIds(dataframe, rows))
-        return dataframe.iloc[selectedRows, :]
+    def filterRowsByIds(dataframe, rowIds):
+        return dataframe.iloc[rowIds, :]
 
-    def getColumnIdx(dataframe, columns, mode='all', ignore_errors=False):
+    def getColumnIds(dataframe, columns, mode='all', ignore_errors=False):
         if not isinstance(columns, list):
             columns = [columns]
-        columnIdx = []
+        columnIds = []
         for col in columns:
             if col not in [str(x) for x in dataframe.columns]:
                 if not ignore_errors:
@@ -250,15 +249,15 @@ class DataframeActions:
                 selection = reversed(list(enumerate(dataframe.columns.tolist()))) if mode == 'last' else enumerate(dataframe.columns.tolist())
                 for i, fcol in selection:
                     if str(fcol) == col:
-                        columnIdx.append(i)
+                        columnIds.append(i)
                         if mode != 'all':
                             break
-        return columnIdx
+        return columnIds
 
-    def getRowIdx(dataframe, rows, mode='all', ignore_errors=False):
+    def getRowIds(dataframe, rows, mode='all', ignore_errors=False):
         if not isinstance(rows, list):
             rows = [rows]
-        rowIdx = []
+        rowIds = []
         for row in rows:
             if row not in [str(x) for x in dataframe.index]:
                 if not ignore_errors:
@@ -267,12 +266,12 @@ class DataframeActions:
                 selection = reversed(list(enumerate(dataframe.index.tolist()))) if mode == 'last' else enumerate(dataframe.index.tolist())
                 for i, frow in selection:
                     if str(frow) == row:
-                        rowIdx.append(i)
+                        rowIds.append(i)
                         if mode != 'all':
                             break
-        return rowIdx
+        return rowIds
 
-    def setIndexColumnByIDx(dataframe, colIdx):
+    def setIndexColumnByIdx(dataframe, colIdx):
         return dataframe.set_index(dataframe.iloc[:, colIdx])
 
     def renameColumns(dataframe, names):
@@ -296,6 +295,7 @@ class DataframeActions:
 
     def sortRows(dataframe, function='mean', order='asc'):
         sortKey = getattr(dataframe, function)(axis=1)
+        sortKey.reset_index(drop=True, inplace=True)
         return dataframe.iloc[sortKey.sort_values(ascending=(order == 'asc')).index, :]
 
     def reverseColumns(dataframe):
@@ -304,22 +304,31 @@ class DataframeActions:
     def reverseRows(dataframe):
         return dataframe.iloc[::-1]
 
-    def sortColumnsByRowIdx(dataframe, rowIdx, order='asc'):
-        if rowIdx == 'columns':
-            sortKey = sorted(range(len(dataframe.columns)), key=lambda k: dataframe.columns[k], reverse=(order != 'asc'))
-            return dataframe.iloc[:, sortKey]
+    def sortColumnsByRowIds(dataframe, rowIds, function='mean', order='asc', quiet=False):
+        if not isinstance(rowIds, list):
+            rowIds = [rowIds]
+        if 'columns' in rowIds:
+            if len(rowIds) > 1:
+                print('WARNING: cannot combine sorting rows after column heads with other columns', file=sys.stderr)
+            sortKey = dataframe.columns.to_series()
         else:
-            sortKey = dataframe.iloc[int(rowIdx)]
-            sortKey.reset_index(drop=True, inplace=True)
-            return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
+            rowIds = list(set(DataframeActions.sliceToRowIds(dataframe, rowIds)))
+            sortKey = getattr(dataframe.iloc[rowIds], function)(axis=0)
+        sortKey.reset_index(drop=True, inplace=True)
+        return dataframe.iloc[:, sortKey.sort_values(ascending=(order == 'asc')).index]
 
-    def sortRowsByColumnIdx(dataframe, colIdx, order='asc'):
-        if colIdx == 'index':
-            return dataframe.sort_index(ascending=(order == 'asc'))
+    def sortRowsByColumnIds(dataframe, colIds, function='mean', order='asc', quiet=False):
+        if not isinstance(colIds, list):
+            colIds = [colIds]
+        if 'index' in colIds:
+            if len(colIds) > 1:
+                print('WARNING: cannot combine sorting columns after index with other rows', file=sys.stderr)
+            sortKey = pandas.to_numeric(dataframe.index, errors="ignore").to_series()
         else:
-            sortKey = dataframe.iloc[:, int(colIdx)]
-            sortKey.reset_index(drop=True, inplace=True)
-            return dataframe.iloc[sortKey.sort_values(ascending=(order == 'asc')).index, :]
+            colIds = list(set(DataframeActions.sliceToColumnIds(dataframe, colIds)))
+            sortKey = getattr(dataframe.iloc[:, colIds], function)(axis=1)
+        sortKey.reset_index(drop=True, inplace=True)
+        return dataframe.iloc[sortKey.sort_values(ascending=(order == 'asc')).index, :]
 
     def addConstant(dataframe, constant):
         return dataframe + constant
@@ -333,67 +342,121 @@ class DataframeActions:
     def abs(dataframe):
         return dataframe.abs()
 
-    def applyOnRowIdx(dataframe, rowIdx, function='abs', inclusive=True, parameter='1', quiet=False):
-        with pandas.option_context('mode.chained_assignment', None):
-            functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
-            if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
-                dataframe.iloc[rowIdx, :] = getattr(dataframe.iloc[rowIdx, :], function)()
-            elif function in functionMap:
-                dataframe.iloc[rowIdx, :] = functionMap[function]
-            elif function == 'set':
-                dataframe = dataframe.apply(lambda _: dataframe.iloc[rowIdx, :], axis=1)
-            elif function == 'polyfit':
-                try:
-                    parameter = int(parameter)
-                except Exception:
-                    print('ERROR: --apply-parameter needs to be an integer for polyfit')
-                fitTarget = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
-                if not quiet and fitTarget.isna().values.any():
-                    print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
-                fitTarget = fitTarget.fillna(0).to_list()
-                fitAlong = dataframe.columns.to_list()
-                if not all([isFloat(x) for x in fitAlong]):
-                    if not quiet:
-                        print('WARNING: columns are not numeric, will fit along a static number series!', file=sys.stderr)
-                    fitAlong = list(range(len(fitTarget)))
-                dataframe.iloc[rowIdx, :] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
-            else:
-                applyRow = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
-                dataframe = dataframe.apply(lambda row: getattr(row, function)(applyRow), axis=1)
-                if not inclusive:
-                    dataframe.iloc[rowIdx, :] = applyRow
-            return dataframe
+    def applyOnRows(dataframe, applyRowIds, targetRowIds, function='abs', parameter='1', quiet=False):
+        colWarning = False
+        constMap = {
+            'zero': 0,
+            'one': 1,
+            'nan': numpy.nan,
+            'const': int(parameter) if str(parameter).isdigit() else float(parameter) if isFloat(parameter) else parameter
+        }
+        # These functions are applied on each row individually, targetRowIds will be considered as applyRowIds as well
+        pandasSelfFunctions  = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
+        specialSelfFunctions = list(constMap.keys()) + ['polyfit']
 
-    def applyOnColumnIdx(dataframe, columnIdx, function='abs', inclusive=True, parameter='1', quiet=False):
         with pandas.option_context('mode.chained_assignment', None):
-            functionMap = {'zero': 0, 'one': 1, 'nan': numpy.nan}
-            if function in ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']:
-                dataframe.iloc[:, columnIdx] = getattr(dataframe.iloc[:, columnIdx], function)()
-            elif function in functionMap:
-                dataframe.iloc[:, columnIdx] = functionMap[function]
-            elif function == 'set':
-                dataframe = dataframe.apply(lambda _: dataframe.iloc[:, colIdx], axis=1)
-            elif function == 'polyfit':
-                try:
-                    parameter = int(parameter)
-                except Exception:
-                    print('ERROR: --apply-parameter needs to be an integer for polyfit')
-                fitTarget = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
-                if not quiet and fitTarget.isna().values.any():
-                    print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
-                fitTarget = fitTarget.fillna(0).to_list()
-                fitAlong = dataframe.index.to_list()
-                if not all([isFloat(x) for x in fitAlong]):
-                    if not quiet:
-                        print('WARNING: index is not numeric, will fit along a static number series!', file=sys.stderr)
-                    fitAlong = list(range(len(fitTarget)))
-                dataframe.iloc[:, columnIdx] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
+            if function in (pandasSelfFunctions + specialSelfFunctions):
+                applyRowIds += targetRowIds
+
+                if function in pandasSelfFunctions:
+                    if function == 'abs':
+                        dataframe.iloc[applyRowIds, :] = dataframe.iloc[applyRowIds, :].abs()
+                    else:
+                        dataframe.iloc[applyRowIds, :] = getattr(dataframe.iloc[applyRowIds, :], function)(axis=1)
+                elif function in constMap:
+                    dataframe.iloc[applyRowIds, :] = constMap[function]
+                elif function == 'polyfit':
+                    try:
+                        parameter = int(parameter)
+                    except Exception:
+                        raise 'ERROR: apply parameter needs to be an integer for polyfit'
+                    for rowIdx in applyRowIds:
+                        fitTarget = dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce')
+                        if not quiet and fitTarget.isna().values.any():
+                            print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
+                        fitTarget = fitTarget.fillna(0).to_list()
+                        fitAlong = dataframe.columns.to_list()
+                        if not all([isFloat(x) for x in fitAlong]):
+                            if not quiet and not colWarning:
+                                colWarning = True
+                                print('WARNING: columns are not numeric, will fit along a static number series!', file=sys.stderr)
+                            fitAlong = list(range(len(fitTarget)))
+                        dataframe.iloc[rowIdx, :] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
+
             else:
-                applyColumn = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
-                dataframe = dataframe.apply(lambda col: getattr(col, function)(applyColumn), axis=0)
-                if not inclusive:
-                    dataframe.iloc[:, columnIdx] = applyColumn
-            return dataframe
+                # All other functions are computations between applyRowIds and targetRowIds
+                if len(targetRowIds) == 0:
+                    # If targetRowIds is empty, fill it with all rows not in applyRowIds
+                    targetRowIds = list(range(dataframe.shape[0]))
+                    targetRowIds = [r for r in targetRowIds if r not in applyRowIds]
+
+                if function == 'set':
+                    if len(applyRowIds) > 0 and not args.quiet:
+                        print('WARNING: only the last row has an effect with apply function set!', file=sys.stderr)
+                    dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1)
+                else:
+                    applyRows = [dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce') for rowIdx in applyRowIds]
+                    for applyRow in applyRows:
+                        dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda row: getattr(row, function)(applyRow), axis=1)
+        return dataframe
+
+    def applyOnColumns(dataframe, applyColumnIds, targetColumnIds, function='abs', parameter='1', quiet=False):
+        indexWarning = False
+        constMap = {
+            'zero': 0,
+            'one': 1,
+            'nan': numpy.nan,
+            'const': int(parameter) if str(parameter).isdigit() else float(parameter) if isFloat(parameter) else parameter
+        }
+        # These functions are applied on each row individually, targetRowIds will be considered as applyRowIds as well
+        pandasSelfFunctions  = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
+        specialSelfFunctions = list(constMap.keys()) + ['polyfit']
+
+        with pandas.option_context('mode.chained_assignment', None):
+            if function in (pandasSelfFunctions + specialSelfFunctions):
+                applyColumnIds += targetColumnIds
+
+                if function in pandasSelfFunctions:
+                    if function == 'abs':
+                        dataframe.iloc[:, applyColumnIds] = dataframe.iloc[:, applyColumnIds].abs()
+                    else:
+                        dataframe.iloc[:, applyColumnIds] = getattr(dataframe.iloc[:, applyColumnIds], function)(axis=0)
+                elif function in constMap:
+                    dataframe.iloc[:, applyColumnIds] = constMap[function]
+                elif function == 'polyfit':
+                    try:
+                        parameter = int(parameter)
+                    except Exception:
+                        raise 'ERROR: apply parameter needs to be an integer for polyfit'
+                    for columnIdx in applyColumnIds:
+                        fitTarget = dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce')
+                        if not quiet and fitTarget.isna().values.any():
+                            print('WARNING: NaN values are replaced with zero for polynomial fitting!', file=sys.stderr)
+                        fitTarget = fitTarget.fillna(0).to_list()
+                        fitAlong = dataframe.columns.to_list()
+                        if not all([isFloat(x) for x in fitAlong]):
+                            if not quiet and not indexWarning:
+                                indexWarning = True
+                                print('WARNING: index is not numeric, will fit along a static number series!', file=sys.stderr)
+                            fitAlong = list(range(len(fitTarget)))
+                        dataframe.iloc[:, columnIdx] = numpy.polyval(numpy.polyfit(fitAlong, fitTarget, parameter), fitAlong)
+
+            else:
+                # All other functions are computations between applyColumnIds and targetColumnIds
+                if len(targetColumnIds) == 0:
+                    # If targetColumnIds is empty, fill it with all columns not in applyColumnIds
+                    targetColumnIds = list(range(dataframe.shape[0]))
+                    targetColumnIds = [r for r in targetColumnIds if r not in applyColumnIds]
+                if len(targetColumnIds) > 0:
+                    if function == 'set':
+                        if len(applyColumnIds) > 0 and not args.quiet:
+                            print('WARNING: only the last column has an effect with apply function set!', file=sys.stderr)
+                        dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda _: dataframe.iloc[applyColumnIds[-1], :], axis=0)
+                    else:
+                        applyColumns = [dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce') for columnIdx in applyColumnIds]
+                        for applyColumn in applyColumns:
+                            dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda column: getattr(column, function)(applyColumn), axis=0)
+        return dataframe
 
     def addRow(dataframe, name, function='mean', where='back'):
         if function in ['nan', 'zero', 'one']:
@@ -527,24 +590,24 @@ parserFileOptions.add_argument("--index-icolumn", help="set index column after i
 parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=str2slice, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-columns", help="ignore these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--ignore-irows", help="ignore these row indexes", type=str2slice, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--ignore-irows", help="ignore these row indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-rows", help="ignore these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 
-parserFileOptions.add_argument("--select-irows", help="select these row indexes", type=str2slice, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-irows", help="select these row indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=str2slice, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='desc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-function", help="sort rows after function or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-columns", help="sort columns", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-irow", help="sort column after this row index", type=str, default=None, choices=Range(None, None, ['columns']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-row", help="sort column after this row", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-irows", help="sort column after this row index", type=SliceType({'columns': lambda v: 'columns', **defaultSliceTypeTranslator}), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-rows", help="sort column after this row", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-rows", help="sort rows", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-icolumn", help="sort rows after this column index", type=str, default=None, choices=Range(None, None, ['index']), sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--sort-by-column", help="sort rows after this column", type=str, default=None, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-icolumns", help="sort rows after this column index", type=SliceType({'index': lambda v: 'index', **defaultSliceTypeTranslator}), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--sort-by-columns", help="sort rows after this column", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--reverse-columns", help="reverse columns order", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--reverse-rows", help="reverse row order", default=False, sub_action="store_true", nargs=0, sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
@@ -570,12 +633,11 @@ parserFileOptions.add_argument("--group-by-row", help="group by this row", type=
 
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-parameter", help="additional function paramter (e.g. dimension of polyfit)", type=str, default='1', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-mode", help="apply function including/excluding the selected row/column (not applicable to all functions)", type=str, default='inclusive', choices=['exclusive', 'inclusive'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set', 'polyfit'], action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=str2slice, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=str2slice, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-rows", help="compute function on multiple rows", type=str, default=None, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-rows", help="compute function on multiple rows", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--column-names", help="rename columns", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--row-names", help="rename rows", type=str, sticky_default=True, default=[], nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -590,8 +652,8 @@ parserFileOptions.add_argument("--split-column", help="split frame along this co
 parserFileOptions.add_argument("--split-irow", help="split frame along this row index ('_columns' splits by columns)", type=str, sticky_default=True, choices=Range(None, None, ['columns']), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--split-row", help="split frame along this row", type=str, sticky_default=True, default=None, action=ChildAction, parent=inputFileArgument)
 
-parserFileOptions.add_argument("--focus-frames", help="set the frame focus for file options (default all)", type=str2slice, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--defocus-frames", help="remove frames from focus for file options", type=str2slice, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--focus-frames", help="set the frame focus for file options (default all)", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--defocus-frames", help="remove frames from focus for file options", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--output-precision", help="set explicit output prevision for text and console output (default %(default)s)", type=str, default='default', choices=Range(0, None, ['default']), action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--file", help="save data frames to text files (one file per frame)", default=None, type=str, nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -983,7 +1045,7 @@ for input in args.input:
             if (not options.no_columns):
                 frame.columns = frame.iloc[0]
                 # frame.columns.name = frame.iloc[0].name
-                frame = DataframeActions.dropRowsByIdx(frame, 0)
+                frame = DataframeActions.dropRowsByIds(frame, [0])
 
             frame = frame.apply(pandas.to_numeric, errors='ignore')
 
@@ -1002,7 +1064,6 @@ for input in args.input:
     addFunction = input['args'].add_function
     applyParameter = input['args'].apply_parameter
     applyFunction = input['args'].apply_function
-    applyInclusive = input['args'].apply_mode == 'inclusive'
     groupFunction = input['args'].group_function
     sortOrder = input['args'].sort_order
     outputPrecision = None if input['args'].output_precision == 'default' else int(input['args'].output_precision)
@@ -1011,7 +1072,7 @@ for input in args.input:
 
     for (optionName, optionValue) in input['args'].ordered_args:
         multiFrameActions = ['output_precision', 'select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
-                             'apply_mode', 'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
+                             'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if (_index) not in focusedFrames:
@@ -1019,30 +1080,34 @@ for input in args.input:
                 if optionName == 'transpose':
                     frame = DataframeActions.transpose(frame)
                 elif optionName == 'index_column':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.setIndexColumnByIDx(frame, columnIdx)
+                    columnIdx = DataframeActions.getColumnIds(frame, optionValue, selectMode)[0]
+                    frame = DataframeActions.setIndexColumnByIdx(frame, columnIdx)
                 elif optionName == 'index_icolumn':
-                    frame = DataframeActions.setIndexColumnByIDx(frame, optionValue)
+                    frame = DataframeActions.setIndexColumnByIdx(frame, optionValue)
                 elif optionName == 'ignore_columns':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.dropColumnsByIdx(frame, columnIdx)
+                    columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.dropColumnsByIds(frame, columnIds)
                 elif optionName == 'ignore_icolumns':
-                    frame = DataframeActions.dropColumnsByIdx(frame, optionValue)
+                    columnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    frame = DataframeActions.dropColumnsByIds(frame, columnIds)
                 elif optionName == 'ignore_rows':
-                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.dropRowsByIdx(frame, rowIdx)
+                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.dropRowsByIds(frame, rowIds)
                 elif optionName == 'ignore_irows':
-                    frame = DataframeActions.dropRowsByIdx(frame, optionValue)
+                    rowIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    frame = DataframeActions.dropRowsByIds(frame, rowIds)
                 elif optionName == 'select_columns':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.filterColumnsByIdx(frame, columnIdx)
+                    columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.filterColumnsByIds(frame, columnIds)
                 elif optionName == 'select_icolumns':
-                    frame = DataframeActions.filterColumnsByIdx(frame, optionValue)
+                    columnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    frame = DataframeActions.filterColumnsByIds(frame, columnIds)
                 elif optionName == 'select_rows':
-                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.filterRowsByIdx(frame, rowIdx)
+                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.filterRowsByIds(frame, rowIds)
                 elif optionName == 'select_irows':
-                    frame = DataframeActions.filterRowsByIdx(frame, optionValue)
+                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
+                    frame = DataframeActions.filterRowsByIds(frame, rowIds)
                 elif optionName == 'reverse_columns':
                     frame = DataframeActions.reverseColumns(frame)
                 elif optionName == 'reverse_rows':
@@ -1051,54 +1116,72 @@ for input in args.input:
                     frame = DataframeActions.sortColumns(frame, sortFunction, sortOrder)
                 elif optionName == 'sort_rows':
                     frame = DataframeActions.sortRows(frame, sortFunction, sortOrder)
-                elif optionName == 'sort_by_column':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.sortRowsByColumnIdx(frame, columnIdx, sortOrder)
-                elif optionName == 'sort_by_icolumn':
-                    frame = DataframeActions.sortRowsByColumnIdx(frame, optionValue, sortOrder)
-                elif optionName == 'sort_by_row':
-                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.sortColumnsByRowIdx(frame, rowIdx, sortOrder)
-                elif optionName == 'sort_by_irow':
-                    frame = DataframeActions.sortColumnsByRowIdx(frame, optionValue, sortOrder)
+                elif optionName == 'sort_by_columns':
+                    columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode)
+                    frame = DataframeActions.sortRowsByColumnIds(frame, columnIds, sortFunction, sortOrder)
+                elif optionName == 'sort_by_icolumns':
+                    frame = DataframeActions.sortRowsByColumnIds(frame, optionValue, sortFunction, sortOrder)
+                elif optionName == 'sort_by_rows':
+                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode)
+                    frame = DataframeActions.sortColumnsByRowIds(frame, rowIds, sortFunction, sortOrder)
+                elif optionName == 'sort_by_irows':
+                    frame = DataframeActions.sortColumnsByRowIds(frame, optionValue, sortFunction, sortOrder)
                 elif optionName == 'normalise_to':
                     frame = DataframeActions.normaliseToConstant(frame, optionValue)
                 elif optionName == 'normalise_to_column':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, 'div', True, '')
+                    applyColumnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode)
+                    targetColumnIds = DataframeActions.sliceToColumnIds(frame, ':')
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
                 elif optionName == 'normalise_to_icolumn':
-                    frame = DataframeActions.applyOnColumnIdx(frame, optionValue, 'div', True, '')
+                    applyColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    if (len(applyColumnIds) > 1 and not args.quiet):
+                        print('WARNING: can only normalise to a single column', file=sys.stderr)
+                    targetColumnIds = DataframeActions.sliceToColumnIds(frame, ':')
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
                 elif optionName == 'normalise_to_row':
-                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.applyOnRowIdx(frame, rowIdx, 'div', True, '')
+                    applyRowIds = DataframeActions.getRowIds(frame, optionValue, selectMode)
+                    targetRowIds = DataframeActions.sliceToColumnIds(frame, ':')
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
                 elif optionName == 'normalise_to_irow':
-                    frame = DataframeActions.applyOnRowIdx(frame, optionValue, 'div', True, '')
+                    applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue)
+                    if (len(applyRowIds) > 1 and not args.quiet):
+                        print('WARNING: can only normalise to a single row', file=sys.stderr)
+                    targetRowIds = DataframeActions.sliceToColumnIds(frame, ':')
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
                 elif optionName == 'abs':
                     frame = DataframeActions.abs(frame)
                 elif optionName == 'apply_irows':
-                    for rowIdx in DataframeActions.sliceToRowIds(frame, optionValue):
-                        frame = DataframeActions.applyOnRowIdx(frame, int(rowIdx), applyFunction, applyInclusive, applyParameter)
+                    applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue[0])
+                    targetRowIds = DataframeActions.sliceToRowIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter)
                 elif optionName == 'apply_rows':
-                    for rowName in optionValue:
-                        rowIdx = DataframeActions.getRowIdx(frame, rowName, selectMode)[0]
-                        frame = DataframeActions.applyOnRowIdx(frame, rowIdx, applyFunction, applyInclusive, applyParameter)
+                    applyRowIds = DataframeActions.getRowIds(frame, optionValue[0])
+                    targetRowIds = DataframeActions.getRowIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter)
                 elif optionName == 'apply_icolumns':
-                    for colIdx in DataframeActions.sliceToColumnIds(frame, optionValue):
-                        frame = DataframeActions.applyOnColumnIdx(frame, int(colIdx), applyFunction, applyInclusive, applyParameter)
+                    applyColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue[0])
+                    targetColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter)
                 elif optionName == 'apply_columns':
-                    for colName in optionValue:
-                        columnIdx = DataframeActions.getColumnIdx(frame, colName, selectMode)[0]
-                        frame = DataframeActions.applyOnColumnIdx(frame, columnIdx, applyFunction, applyInclusive, applyParameter)
+                    applyColumnIds = DataframeActions.getColumnIds(frame, optionValue[0])
+                    targetColumnIds = DataframeActions.getColumnIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter)
                 elif optionName == 'group_by_irow':
-                    frame = DataframeActions.groupByRowIdx(frame, optionValue, groupFunction)
-                elif optionName == 'group_by_row':
-                    rowIdx = DataframeActions.getRowIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.groupByRowIdx(frame, rowIdx, groupFunction)
+                    rowIds = DataframeActions.sliceToRowIds(frame, optionValue)
+                    if (len(rowIds) > 1 and not args.quiet):
+                        print('WARNING: can only group after a single row', file=sys.stderr)
+                    frame = DataframeActions.groupByRowIdx(frame, rowIds[0], groupFunction)
                 elif optionName == 'group_by_icolumn':
-                    frame = DataframeActions.groupByColumnIdx(frame, optionValue, groupFunction)
+                    columnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
+                    if (len(columnIds) > 1 and not args.quiet):
+                        print('WARNING: can only group after a single column', file=sys.stderr)
+                    frame = DataframeActions.groupByColumnIdx(frame, columnIds[0], groupFunction)
+                elif optionName == 'group_by_row':
+                    rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode)
+                    frame = DataframeActions.groupByRowIdx(frame, rowIds[0], groupFunction)
                 elif optionName == 'group_by_column':
-                    columnIdx = DataframeActions.getColumnIdx(frame, optionValue, selectMode)[0]
-                    frame = DataframeActions.groupByColumnIdx(frame, columnIdx, groupFunction)
+                    columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode)
+                    frame = DataframeActions.groupByColumnIdx(frame, columnIds[0], groupFunction)
                 elif optionName == 'add_column':
                     frame = DataframeActions.addColumn(frame, optionValue, addFunction, addAt)
                 elif optionName == 'add_row':
@@ -1143,8 +1226,6 @@ for input in args.input:
                 applyFunction = optionValue
             elif optionName == 'group_function':
                 groupFunction = optionValue
-            elif optionName == 'apply_mode':
-                applyInclusive = optionValue == 'inclusive'
             elif optionName == 'apply_parameter':
                 applyParameter = optionValue
             elif optionName == 'join':

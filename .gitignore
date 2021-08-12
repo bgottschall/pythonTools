@@ -1,1 +1,2 @@
-*.AppImage
+tests/tests.out
+tests/testdata.csv

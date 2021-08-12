@@ -29,7 +29,6 @@ import os
 import io
 import gc
 import subprocess
-import statistics
 import sys
 import pickle
 import copy
@@ -200,7 +199,7 @@ def updateRange(_range, dataList):
         if data is not None:
             if not isinstance(data, list):
                 data = [data]
-            scope = [x for x in data if isFloat(x)]
+            scope = [float(x) for x in data if isFloat(x)]
             if len(scope) > 0:
                 _range[index]['min'] = min(scope) if _range[index]['min'] is None else min(_range[index]['min'], min(scope))
                 _range[index]['max'] = max(scope) if _range[index]['max'] is None else max(_range[index]['max'], max(scope))
@@ -1070,6 +1069,7 @@ for input in args.input:
                 frame = DataframeActions.dropRowsByIds(frame, [0])
 
             frame = frame.apply(pandas.to_numeric, errors='ignore')
+            frame = frame.apply(numpy.vectorize(lambda x : float(x) if isFloat(x) else x))
 
             options.frameCount = 1
             options.frameIndex = inputOptions.frameCount
@@ -1559,8 +1559,8 @@ for input in data:
         # NaN cannot be plotted or used, cast it to None
         # Drop only columns/rows NaN values and replace NaN with None
         frame = frame.dropna(how='all', axis=0)
-        frame = frame.where((pandas.notnull(frame)), None)
-
+        frame = frame.replace({numpy.nan: None})
+        frame.index = frame.index.to_series().replace({numpy.nan: None})
         frameTraceIndex = 0
 
         _categories = None
@@ -1773,8 +1773,8 @@ fig.add_trace(go.Scatter(
     name='mean_{traceName}',
     legendgroup='{traceName}',
     showlegend=False,
-    x={xdata if options.vertical else [statistics.mean(xdata)]},
-    y={ydata if not options.vertical else [statistics.mean(ydata)]},
+    x={xdata if options.vertical else [numpy.mean([float(x) for x in xdata if isFloat(x)])]},
+    y={ydata if not options.vertical else [numpy.mean([float(y) for y in ydata if isFloat(y)])]},
 {commentColour}    fillcolor='{fillcolour}',
 {commentColour}    line_color='{markercolour}',
     line_width={options.line_width},
@@ -1945,8 +1945,8 @@ if len(args.output) > 0:
             fig.write_html(output)
         else:
             fig.write_image(output, width=args.width, height=args.height)
-        print(f'Saved to {output}')
         if not args.quiet:
+            print(f'Saved to {output}')
             try:
                 subprocess.check_call([openWith, output], stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL)
             except Exception:

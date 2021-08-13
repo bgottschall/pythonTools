@@ -15,10 +15,11 @@ define check_exists
 endef
 
 define check_output
-	$(SKIP_CHECK) || [ "$$(sed "$$(($(3) + 1))q;d" $(1).checksums 2>/dev/null)" = "$$(md5sum $(OUTDIR)/$(1).$(3).out)" ] && echo "> PASSED" || { echo "> FAILED"; exit 1; }
+	$(SKIP_CHECK) || [ "$$(sed "$$(($(2) + 1))q;d" $(1).checksums 2>/dev/null)" = "$$(md5sum $(OUTDIR)/$(1).$(2).out)" ] && echo "> PASSED" || { echo "> FAILED"; exit 1; }
 endef
 
 tests:
+	rm -Rf $(OUTDIR)
 	$(MAKE) --no-print-directory general
 	$(MAKE) --no-print-directory $(OUTDIR)/$(INPUT)
 
@@ -26,9 +27,9 @@ tests.dev:
 	$(MAKE) SKIP_CHECK=true tests
 
 tests.md5s: $(INPUT)
-	rm -f $@.checksums; \
-	for i in tests.out/$@.*.out; do \
-		md5sum $$i >> $@.checksums; \
+	rm -f $<.checksums; \
+	for i in tests.out/$<.*.out; do \
+		md5sum $$i >> $<.checksums; \
 	done
 
 
@@ -42,7 +43,7 @@ $(INPUT):
 	echo "2;1;2;3;4"          >> $@
 	echo "3;1;2;3;4"          >> $@
 	echo "4;1;2;3;4"          >> $@
-	echo ";NaN;nan;nAn;"     >> $@
+	echo ";NaN;nan;nAn;"      >> $@
 	echo "i0;1;2;3;4"         >> $@
 	echo "i1;1;2;3;4"         >> $@
 	echo "i2;1;2;3;4"         >> $@
@@ -51,12 +52,12 @@ $(INPUT):
 	echo "f0;1.2;2.2;3.2;4.2" >> $@
 	echo "f1;1.4;2.4;3.4;4.4" >> $@
 	echo "f2;1.6;2.6;3.6;4.6" >> $@
-	echo "f3;2.8;3.8;4.8;5.8" >> $@
-	echo "f3;2;3;4;5"         >> $@
+	echo "f3;1.8;2.8;3.8;4.8" >> $@
+	echo "f4;2;3;4;5"         >> $@
 
 general:
 	@echo "> Checking plot.py executeable..."
-	$(PLOTPY) --help
+	$(PLOTPY) --help >/dev/null
 	@echo "> PASSED"
 
 $(OUTDIR)/$(INPUT) : $(INPUT) $(OUTDIR)

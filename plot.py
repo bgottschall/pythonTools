@@ -164,7 +164,9 @@ class Range(object):
         return ret + (', or ' + ', '.join(self.orValues) if self.orValues is not None and len(self.orValues) > 0 else '')
 
 
-defaultSliceTypeTranslator = {'all' : slice(None)}
+defaultSliceTypeTranslator = {'all': slice(None)}
+
+
 def SliceType(translator=defaultSliceTypeTranslator):
     def str2slice(value):
         if value in translator:
@@ -178,10 +180,22 @@ def SliceType(translator=defaultSliceTypeTranslator):
             return slice(*tSection)
     return str2slice
 
+
+def isSliceType(value, translator=defaultSliceTypeTranslator):
+    if value is None:
+        return False
+    try:
+        SliceType(translator)(value)
+        return True
+    except Exception:
+        return False
+
+
 def getSliceTypeIds(targetRange: range, slices: list):
     validIntRange = range(-len(targetRange), len(targetRange))
     selectedRanges = [targetRange[s] if isinstance(s, slice) else [targetRange[s]] if s in validIntRange else [] for s in slices]
     return [i for li in selectedRanges for i in li]
+
 
 def updateRange(_range, dataList):
     if not isinstance(_range, list):
@@ -206,6 +220,21 @@ def updateRange(_range, dataList):
 
 
 class DataframeActions:
+    def filterFunction(frame, data, mode):
+        filterMap = {
+            '=': lambda x: any(x == y for y in data),
+            '<': lambda x: any(x < y for y in data),
+            '>': lambda x: any(x > y for y in data),
+            '!=': lambda x: all(x != y for y in data),
+            '<=': lambda x: any(x <= y for y in data),
+            '>=': lambda x: any(x >= y for y in data)
+        }
+
+        if mode not in filterMap:
+            return frame
+        else:
+            return frame.apply(filterMap[mode])
+
     def transpose(dataframe):
         return dataframe.transpose()
 
@@ -235,6 +264,22 @@ class DataframeActions:
 
     def filterRowsByIds(dataframe, rowIds):
         return dataframe.iloc[rowIds, :]
+
+    def filterRowsByColumnData(dataframe, columnIds, data, mode='='):
+        if not isinstance(data, list):
+            data = [data]
+        data = [float(x) if isFloat(x) else x for x in data]
+        for columnId in columnIds:
+            dataframe = dataframe[DataframeActions.filterFunction(dataframe.iloc[:, columnId], data, mode)]
+        return dataframe
+
+    def filterColumnsByRowData(dataframe, rowIds, data, mode='='):
+        if not isinstance(data, list):
+            data = [data]
+        data = [float(x) if isFloat(x) else x for x in data]
+        for rowId in rowIds:
+            dataframe = dataframe.loc[:, DataframeActions.filterFunction(dataframe.iloc[rowId, :], data, mode)]
+        return dataframe
 
     def getColumnIds(dataframe, columns, mode='all', ignore_errors=False):
         if not isinstance(columns, list):
@@ -281,6 +326,9 @@ class DataframeActions:
                         if mode != 'all':
                             break
         return rowIds
+
+    def resetIndex(dataframe):
+        return dataframe.reset_index()
 
     def setIndexColumnByIdx(dataframe, colIdx):
         return dataframe.set_index(dataframe.iloc[:, colIdx])
@@ -361,7 +409,7 @@ class DataframeActions:
             'const': int(parameter) if str(parameter).isdigit() else float(parameter) if isFloat(parameter) else parameter
         }
         # These functions are applied on each row individually, targetRowIds will be considered as applyRowIds as well
-        pandasSelfFunctions  = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
+        pandasSelfFunctions = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
         specialSelfFunctions = list(constMap.keys()) + ['polyfit']
 
         with pandas.option_context('mode.chained_assignment', None):
@@ -424,7 +472,7 @@ class DataframeActions:
             'const': int(parameter) if str(parameter).isdigit() else float(parameter) if isFloat(parameter) else parameter
         }
         # These functions are applied on each row individually, targetRowIds will be considered as applyRowIds as well
-        pandasSelfFunctions  = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
+        pandasSelfFunctions = ['abs', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank']
         specialSelfFunctions = list(constMap.keys()) + ['polyfit']
 
         with pandas.option_context('mode.chained_assignment', None):
@@ -610,6 +658,7 @@ parserFileOptions.add_argument("--no-index", help="do not use a index column", d
 
 parserFileOptions.add_argument("--index-icolumn", help="set index column after index", type=int, sticky_default=True, choices=Range(None, None), default=None, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--index-column", help="set index column", default=None, type=str, sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--reset-index", help="reset index back into data frame as first column", default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--select-mode", help="select row/columns after policy (default %(default)s)", type=str, default='all', choices=['all', 'first', 'last'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--ignore-icolumns", help="ignore these column indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
@@ -621,6 +670,13 @@ parserFileOptions.add_argument("--select-irows", help="select these row indexes"
 parserFileOptions.add_argument("--select-rows", help="select these rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-icolumns", help="select these column indexes", type=SliceType(), default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--select-columns", help="select these columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+
+
+parserFileOptions.add_argument("--filter-mode", help="filter data mode (default %(default)s)", type=str, default="=", choices=['=', '!=', '<', '>', '<=', '>=' '!='], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--filter-irows", help="filter data from rows after indexes", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--filter-row", help="filter data from rows", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--filter-icolumns", help="filter data from columns after indexes", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--filter-column", help="filter data from columns", type=str, default=[], sticky_default=True, nargs='+', action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--sort-order", help="sort rows after or column in this order (default %(default)s)", default='desc', choices=['asc', 'desc'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--sort-function", help="sort rows after function or column (default %(default)s)", default='mean', choices=['mean', 'median', 'std', 'min', 'max'], action=ChildAction, parent=inputFileArgument)
@@ -1039,9 +1095,9 @@ for input in args.input:
 
         if frame is not None:
             if not args.quiet and inputOptions.no_index:
-                print("WARNING: ignoring --no-index for {filename}", file=sys.stderr)
+                print(f"WARNING: ignoring --no-index for {filename}", file=sys.stderr)
             if not args.quiet and inputOptions.no_columns:
-                print("WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
+                print(f"WARNING: ignoring --no-columns for {filename}", file=sys.stderr)
 
             if (isinstance(frame, list)):
                 for f in frame:
@@ -1069,7 +1125,7 @@ for input in args.input:
                 frame = DataframeActions.dropRowsByIds(frame, [0])
 
             frame = frame.apply(pandas.to_numeric, errors='ignore')
-            frame = frame.apply(numpy.vectorize(lambda x : float(x) if isFloat(x) else x))
+            frame = frame.applymap(lambda x: float(x) if isFloat(x) else x)
 
             options.frameCount = 1
             options.frameIndex = inputOptions.frameCount
@@ -1081,6 +1137,7 @@ for input in args.input:
     gc.collect()
 
     selectMode = input['args'].select_mode
+    filterMode = input['args'].filter_mode
     sortFunction = input['args'].sort_function
     addAt = input['args'].add_at
     addFunction = input['args'].add_function
@@ -1093,7 +1150,7 @@ for input in args.input:
     focusedFrames = list(range(len(inputFrames)))
 
     for (optionName, optionValue) in input['args'].ordered_args:
-        multiFrameActions = ['output_precision', 'select_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
+        multiFrameActions = ['output_precision', 'select_mode', 'filter_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
                              'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
@@ -1113,6 +1170,8 @@ for input in args.input:
                         print('WARNING: cannot set multiple index columns', file=sys.stderr)
                     if (len(columnIds) > 0):
                         frame = DataframeActions.setIndexColumnByIdx(frame, columnIds[0])
+                elif optionName == 'reset_index':
+                    frame = DataframeActions.resetIndex(frame)
                 elif optionName == 'ignore_columns':
                     columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode, True)
                     frame = DataframeActions.dropColumnsByIds(frame, columnIds)
@@ -1137,6 +1196,46 @@ for input in args.input:
                 elif optionName == 'select_irows':
                     rowIds = DataframeActions.sliceToRowIds(frame, optionValue)
                     frame = DataframeActions.filterRowsByIds(frame, rowIds)
+                elif optionName == 'filter_column':
+                    columnIds = DataframeActions.getColumnIds(frame, optionValue[0], selectMode, True)
+                    if len(columnIds) == 0:
+                        if not args.quiet:
+                            print(f"WARNING: column '{optionValue[0]}' not found", file=sys.stderr)
+                    elif len(optionValue) < 2:
+                        if not args.quiet:
+                            print('WARNING: nothing provided to filter after', file=sys.stderr)
+                    else:
+                        frame = DataframeActions.filterRowsByColumnData(frame, columnIds, optionValue[1:], filterMode)
+                elif optionName == 'filter_icolumns':
+                    if not isSliceType(optionValue[0]):
+                        if not args.quiet:
+                            print('WARNING: invalid slice provided to filter data', file=sys.stderr)
+                    elif len(optionValue) < 2:
+                        if not args.quiet:
+                            print('WARNING: nothing provided to filter after', file=sys.stderr)
+                    else:
+                        columnIds = DataframeActions.sliceToColumnIds(frame, SliceType()(optionValue[0]))
+                        frame = DataframeActions.filterRowsByColumnData(frame, columnIds, optionValue[1:], filterMode)
+                elif optionName == 'filter_row':
+                    rowIds = DataframeActions.getRowIds(frame, optionValue[0], selectMode, True)
+                    if len(rowIds) == 0:
+                        if not args.quiet:
+                            print(f"WARNING: row '{optionValue[0]}' not found", file=sys.stderr)
+                    elif len(optionValue) < 2:
+                        if not args.quiet:
+                            print('WARNING: nothing provided to filter after', file=sys.stderr)
+                    else:
+                        frame = DataframeActions.filterColumnsByRowData(frame, rowIds, optionValue[1:], filterMode)
+                elif optionName == 'filter_irows':
+                    if not isSliceType(optionValue[0]):
+                        if not args.quiet:
+                            print('WARNING: invalid slice provided to filter data', file=sys.stderr)
+                    elif len(optionValue) < 2:
+                        if not args.quiet:
+                            print('WARNING: nothing provided to filter after', file=sys.stderr)
+                    else:
+                        rowIds = DataframeActions.sliceToRowIds(frame, SliceType()(optionValue[0]))
+                        frame = DataframeActions.filterColumnsByRowData(frame, rowIds, optionValue[1:], filterMode)
                 elif optionName == 'reverse_columns':
                     frame = DataframeActions.reverseColumns(frame)
                 elif optionName == 'reverse_rows':
@@ -1269,6 +1368,8 @@ for input in args.input:
                 outputPrecision = None if optionValue == 'default' else int(optionValue)
             elif optionName == 'select_mode':
                 selectMode = optionValue
+            elif optionName == 'filter_mode':
+                filterMode = optionValue
             elif optionName == 'sort_function':
                 sortFunction = optionValue
             elif optionName == 'sort_order':

@@ -37,6 +37,8 @@ import shutil
 import xopen
 import seaborn
 
+__version__ = '0.1.0'
+
 
 def isFloat(val):
     if val is None:
@@ -255,14 +257,14 @@ class DataframeActions:
         filterColumns = numpy.array([False if i in colIds else True for i in range(dataframe.shape[1])])
         return dataframe.loc[:, filterColumns]
 
-    def filterColumnsByIds(dataframe, colIds):
+    def selectColumnsByIds(dataframe, colIds):
         return dataframe.iloc[:, colIds]
 
     def dropRowsByIds(dataframe, rowIds):
         filterRows = numpy.array([False if i in rowIds else True for i in range(dataframe.shape[0])])
         return dataframe.iloc[filterRows, :]
 
-    def filterRowsByIds(dataframe, rowIds):
+    def selectRowsByIds(dataframe, rowIds):
         return dataframe.iloc[rowIds, :]
 
     def filterRowsByColumnData(dataframe, columnIds, data, mode='='):
@@ -395,7 +397,7 @@ class DataframeActions:
     def abs(dataframe):
         return dataframe.abs()
 
-    def applyOnRows(dataframe, applyRowIds, targetRowIds, function='abs', parameter='1', quiet=False):
+    def applyOnRows(dataframe, applyRowIds, targetRowIds=[], function='abs', parameter='1', applyMode='normal', quiet=False):
         if not isinstance(applyRowIds, list):
             applyRowIds = [applyRowIds]
         if not isinstance(targetRowIds, list):
@@ -448,17 +450,21 @@ class DataframeActions:
                     targetRowIds = list(range(dataframe.shape[0]))
                     targetRowIds = [r for r in targetRowIds if r not in applyRowIds]
 
-                if function == 'set':
-                    if len(applyRowIds) > 0 and not args.quiet:
-                        print('WARNING: only the last row has an effect with apply function set!', file=sys.stderr)
-                    dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1).values
-                else:
-                    applyRows = [dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce') for rowIdx in applyRowIds]
-                    for applyRow in applyRows:
-                        dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda row: getattr(row, function)(applyRow), axis=1).values
+                if len(targetRowIds) > 0:
+                    if applyMode == 'reverse':
+                        targetRowIds, applyRowIds = applyRowIds, targetRowIds
+
+                    if function == 'set':
+                        if len(applyRowIds) > 0 and not args.quiet:
+                            print('WARNING: only the last row has an effect with apply function set!', file=sys.stderr)
+                        dataframe.iloc[targetRowIds, :] = dataframe.iloc[targetRowIds, :].apply(lambda _: dataframe.iloc[applyRowIds[-1], :], axis=1).values
+                    else:
+                        applyRows = [dataframe.iloc[rowIdx, :].apply(pandas.to_numeric, errors='coerce') for rowIdx in applyRowIds]
+                        for applyRow in applyRows:
+                            dataframe.iloc[targetRowIds, :] = getattr(dataframe.iloc[targetRowIds, :].apply(pandas.to_numeric, errors="coerce"), function)(applyRow, axis=1).values
         return dataframe
 
-    def applyOnColumns(dataframe, applyColumnIds, targetColumnIds, function='abs', parameter='1', quiet=False):
+    def applyOnColumns(dataframe, applyColumnIds, targetColumnIds=[], function='abs', parameter='1', applyMode='normal', quiet=False):
         if not isinstance(applyColumnIds, list):
             applyColumnIds = [applyColumnIds]
         if not isinstance(targetColumnIds, list):
@@ -510,7 +516,11 @@ class DataframeActions:
                     # If targetColumnIds is empty, fill it with all columns not in applyColumnIds
                     targetColumnIds = list(range(dataframe.shape[1]))
                     targetColumnIds = [r for r in targetColumnIds if r not in applyColumnIds]
+
                 if len(targetColumnIds) > 0:
+                    if applyMode == 'reverse':
+                        targetColumnIds, applyColumnIds = applyColumnIds, targetColumnIds
+
                     if function == 'set':
                         if len(applyColumnIds) > 0 and not args.quiet:
                             print('WARNING: only the last column has an effect with apply function set!', file=sys.stderr)
@@ -518,7 +528,7 @@ class DataframeActions:
                     else:
                         applyColumns = [dataframe.iloc[:, columnIdx].apply(pandas.to_numeric, errors='coerce') for columnIdx in applyColumnIds]
                         for applyColumn in applyColumns:
-                            dataframe.iloc[:, targetColumnIds] = dataframe.iloc[:, targetColumnIds].apply(lambda column: getattr(column, function)(applyColumn), axis=0).values
+                            dataframe.iloc[:, targetColumnIds] = getattr(dataframe.iloc[:, targetColumnIds].apply(pandas.to_numeric, errors="coerce"), function)(applyColumn, axis=0).values
         return dataframe
 
     def addRow(dataframe, name, function='mean', where='back'):
@@ -710,8 +720,9 @@ parserFileOptions.add_argument("--group-by-irows", help="group by this row index
 parserFileOptions.add_argument("--group-by-rows", help="group by this row", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 
 parserFileOptions.add_argument("--abs", help="convert all values to absolute values", type=str, default=False, nargs=0, sub_action="store_true", sticky_default=True, action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-mode", help="apply first row/column parameter on all others or in reverse (default %(default)s)", type=str, default='normal', choices=['normal', 'reverse'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-parameter", help="additional function paramter (e.g. dimension of polyfit)", type=str, default='1', action=ChildAction, parent=inputFileArgument)
-parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set', 'polyfit'], action=ChildAction, parent=inputFileArgument)
+parserFileOptions.add_argument("--apply-function", help="use this function to compute new row/column", type=str, default='mean', choices=['add', 'radd', 'sub', 'rsub', 'mul', 'rmul', 'div', 'rdiv', 'mod', 'rmod', 'pow', 'rpow', 'cumsum', 'cummax', 'cummin', 'cumprod', 'rank', 'nan', 'zero', 'one', 'abs', 'set', 'const', 'polyfit'], action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-icolumns", help="compute function on multiple column indexes", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-irows", help="compute function on multiple row indexes", type=SliceType(), default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
 parserFileOptions.add_argument("--apply-columns", help="compute function on multiple columns", type=str, default=[], nargs='+', sticky_default=True, action=ChildAction, parent=inputFileArgument)
@@ -900,6 +911,7 @@ parserOutputOptions.add_argument("--script", help="save self-contained plotting 
 parserOutputOptions.add_argument("--browser", help="open plot in the browser", default=False, action="store_true")
 parserOutputOptions.add_argument("-o", "--output", help="export plot to file (html, pdf, svg, png, py, ...)", default=[], nargs='+')
 parserOutputOptions.add_argument("-q", "--quiet", action="store_true", help="no warnings and don't open output file", default=False)
+parserOutputOptions.add_argument("-v", "--version", action="version", version='%(prog)s ' + __version__ + ', sourced from https://github.com/bgottschall/pythonTools')
 
 args = parser.parse_args()
 
@@ -1141,6 +1153,7 @@ for input in args.input:
     sortFunction = input['args'].sort_function
     addAt = input['args'].add_at
     addFunction = input['args'].add_function
+    applyMode = input['args'].apply_mode
     applyParameter = input['args'].apply_parameter
     applyFunction = input['args'].apply_function
     groupFunction = input['args'].group_function
@@ -1150,8 +1163,7 @@ for input in args.input:
     focusedFrames = list(range(len(inputFrames)))
 
     for (optionName, optionValue) in input['args'].ordered_args:
-        multiFrameActions = ['output_precision', 'select_mode', 'filter_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_function', 'group_function',
-                             'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
+        multiFrameActions = ['output_precision', 'select_mode', 'filter_mode', 'sort_function', 'sort_order', 'add_at', 'add_function', 'apply_mode', 'apply_function', 'group_function', 'apply_parameter', 'join', 'file', 'pickle', 'split_column', 'split_icolumn', 'split_row', 'split_irow', 'focus_frames', 'defocus_frames']
         if optionName not in multiFrameActions:
             for _index, (frameOptions, frame) in enumerate(inputFrames):
                 if (_index) not in focusedFrames:
@@ -1186,16 +1198,16 @@ for input in args.input:
                     frame = DataframeActions.dropRowsByIds(frame, rowIds)
                 elif optionName == 'select_columns':
                     columnIds = DataframeActions.getColumnIds(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.filterColumnsByIds(frame, columnIds)
+                    frame = DataframeActions.selectColumnsByIds(frame, columnIds)
                 elif optionName == 'select_icolumns':
                     columnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
-                    frame = DataframeActions.filterColumnsByIds(frame, columnIds)
+                    frame = DataframeActions.selectColumnsByIds(frame, columnIds)
                 elif optionName == 'select_rows':
                     rowIds = DataframeActions.getRowIds(frame, optionValue, selectMode, True)
-                    frame = DataframeActions.filterRowsByIds(frame, rowIds)
+                    frame = DataframeActions.selectRowsByIds(frame, rowIds)
                 elif optionName == 'select_irows':
                     rowIds = DataframeActions.sliceToRowIds(frame, optionValue)
-                    frame = DataframeActions.filterRowsByIds(frame, rowIds)
+                    frame = DataframeActions.selectRowsByIds(frame, rowIds)
                 elif optionName == 'filter_column':
                     columnIds = DataframeActions.getColumnIds(frame, optionValue[0], selectMode, True)
                     if len(columnIds) == 0:
@@ -1274,46 +1286,46 @@ for input in args.input:
                         print('WARNING:', file=sys.stderr)
                     targetColumnIds = DataframeActions.sliceToColumnIds(frame, slice(None))
                     if len(applyColumnIds) > 0 and len(targetColumnIds) > 0:
-                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
+                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div')
                 elif optionName == 'normalise_to_icolumn':
                     applyColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue)
                     if (len(applyColumnIds) > 1 and not args.quiet):
                         print('WARNING: can only normalise to a single column', file=sys.stderr)
                     targetColumnIds = DataframeActions.sliceToColumnIds(frame, slice(None))
                     if len(applyColumnIds) > 0 and len(targetColumnIds) > 0:
-                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div', '')
+                        frame = DataframeActions.applyOnColumns(frame, applyColumnIds[0], targetColumnIds, 'div')
                 elif optionName == 'normalise_to_row':
                     applyRowIds = DataframeActions.getRowIds(frame, optionValue, selectMode)
                     if len(applyRowIds) > 1 and not args.quiet:
                         print('WARNING:', file=sys.stderr)
                     targetRowIds = DataframeActions.sliceToRowIds(frame, slice(None))
                     if len(applyRowIds) > 0 and len(targetRowIds) > 0:
-                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
+                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div')
                 elif optionName == 'normalise_to_irow':
                     applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue)
                     if (len(applyRowIds) > 1 and not args.quiet):
                         print('WARNING: can only normalise to a single row', file=sys.stderr)
                     targetRowIds = DataframeActions.sliceToRowIds(frame, slice(None))
                     if len(applyRowIds) > 0 and len(targetRowIds) > 0:
-                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div', '')
+                        frame = DataframeActions.applyOnRows(frame, applyRowIds[0], targetRowIds, 'div')
                 elif optionName == 'abs':
                     frame = DataframeActions.abs(frame)
                 elif optionName == 'apply_irows':
                     applyRowIds = DataframeActions.sliceToRowIds(frame, optionValue[0])
                     targetRowIds = DataframeActions.sliceToRowIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
-                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter)
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter, applyMode)
                 elif optionName == 'apply_rows':
                     applyRowIds = DataframeActions.getRowIds(frame, optionValue[0])
                     targetRowIds = DataframeActions.getRowIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
-                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter)
+                    frame = DataframeActions.applyOnRows(frame, applyRowIds, targetRowIds, applyFunction, applyParameter, applyMode)
                 elif optionName == 'apply_icolumns':
                     applyColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue[0])
                     targetColumnIds = DataframeActions.sliceToColumnIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
-                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter)
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter, applyMode)
                 elif optionName == 'apply_columns':
                     applyColumnIds = DataframeActions.getColumnIds(frame, optionValue[0])
                     targetColumnIds = DataframeActions.getColumnIds(frame, optionValue[1:]) if len(optionValue) > 1 else []
-                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter)
+                    frame = DataframeActions.applyOnColumns(frame, applyColumnIds, targetColumnIds, applyFunction, applyParameter, applyMode)
                 elif optionName == 'group_by_irows':
                     if 'columns' in optionValue:
                         if (len(optionValue) > 1 and not args.quiet):
@@ -1378,6 +1390,8 @@ for input in args.input:
                 addAt = optionValue
             elif optionName == 'add_function':
                 addFunction = optionValue
+            elif optionName == 'apply_mode':
+                applyMode = optionValue
             elif optionName == 'apply_function':
                 applyFunction = optionValue
             elif optionName == 'group_function':
@@ -1563,27 +1577,7 @@ else:
 
 plotScript.write(f"""#!/usr/bin/env python3
 #
-# Generated by plot.py from https://github.com/bgottschall/pythonTools
-#
-# Copyright (c) 2020 Björn Gottschall
-#
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
+# Generated by plot.py {__version__} from https://github.com/bgottschall/pythonTools
 
 import os
 import sys
@@ -1656,6 +1650,11 @@ for input in data:
     inputTraceIndex = 0
     inputFrameIndex = 0
     multiCategory = False
+
+    if options.traceCount == 0:
+        print(f"WARNING: frame {inputFrameIndex} from input files {', '.join(options.filenames)} has no traces")
+        continue
+
     for frame in frames:
         # NaN cannot be plotted or used, cast it to None
         # Drop only columns/rows NaN values and replace NaN with None

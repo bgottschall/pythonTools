@@ -4,6 +4,7 @@ from argparse import ArgumentParser
 import numpy
 import re
 import math
+import os
 from scipy import stats
 
 
@@ -19,13 +20,18 @@ def isFloat(val):
         return False
 
 
+def numbersFromFile(filefd):
+    nset = []
+    for line in filefd.readlines():
+        nset.extend(line.split())
+    return numpy.array([float(x) for x in nset if isFloat(x)])
+
+
 def numbersFromStdIn():
     import sys
-    stdinSet = []
-    for line in sys.stdin.readlines():
-        stdinSet.extend(line.split())
-    return numpy.array([float(x) for x in stdinSet if isFloat(x)])
+    return numbersFromFile(sys.stdin)
 
+    
 
 quiet = False
 formatter = '{:}'
@@ -52,24 +58,24 @@ def polyfitProp(l1, l2, arg):
 
 
 props = {
-    'count':      {'label': 'Count',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)},
-    'sum':        {'label': 'Sum',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.sum(l1)},
-    'min':        {'label': 'Min',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.min(l1)},
-    'max':        {'label': 'Max',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.max(l1)},
-    'q1':         {'label': 'Q1',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 25)},
-    'q2':         {'label': 'Q2',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 50)},
-    'q3':         {'label': 'Q3',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 75)},
-    'p%':         {'label': 'P%',        'secondary': False, 'argument': True,  'func': lambda l1, l2, arg: numpy.percentile(l1, float(arg))},
-    'hmean':      {'label': 'HMean',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.hmean(l1)},
-    'gmean':      {'label': 'GMean',     'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.mstats.gmean(l1)},
-    'mean':       {'label': 'Mean',      'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
-    'avg':        {'label': 'Avg',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
-    'std':        {'label': 'σ',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
-    'var':        {'label': 'σ²',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},
-    'pvalue':     {'label': 'P-Value',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
-    'spearmanr':  {'label': 'SpearmanR', 'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]},
-    'pearsonr':   {'label': 'PearsonR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.pearsonr(l1, l2)[0]},
-    'polyfit%d':  {'label': 'PolyFit%D',   'secondary': True,  'argument': True,  'func': polyfitProp}
+    'count':      {'label': 'Count',      'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: len(l1)},
+    'sum':        {'label': 'Sum',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.sum(l1)},
+    'min':        {'label': 'Min',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.min(l1)},
+    'max':        {'label': 'Max',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.max(l1)},
+    'q1':         {'label': 'Q1',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 25)},
+    'q2':         {'label': 'Q2',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 50)},
+    'q3':         {'label': 'Q3',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.percentile(l1, 75)},
+    'p%':         {'label': 'P%',         'secondary': False, 'argument': True,  'func': lambda l1, l2, arg: numpy.percentile(l1, float(arg))},
+    'hmean':      {'label': 'HMean',      'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.hmean(l1)},
+    'gmean':      {'label': 'GMean',      'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: stats.mstats.gmean(l1)},
+    'mean':       {'label': 'Mean',       'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
+    'avg':        {'label': 'Avg',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
+    'std':        {'label': 'σ',          'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
+    'var':        {'label': 'σ²',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},
+    'pvalue':     {'label': 'P-Value',    'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
+    'spearmanr':  {'label': 'SpearmanR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]},
+    'pearsonr':   {'label': 'PearsonR',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.pearsonr(l1, l2)[0]},
+    'polyfit%d':  {'label': 'PolyFit%D',  'secondary': True,  'argument': True,  'func': polyfitProp}
 }
 
 defaultProps = ['count', 'sum', 'min', 'max', 'q2', 'avg', 'std']
@@ -95,13 +101,20 @@ stdinConsumed = False
 if args.precision is not None and args.precision < 0:
     args.precision = None
 
+
 if len(args.primary) == 0:
     if args.debug:
         print('[DEBUG] no primary number set given, reading from stdin')
     l1 = numbersFromStdIn()
     stdinConsumed = True
 else:
-    l1 = numpy.array([float(x) for x in args.primary if isFloat(x)])
+    l1 = []
+    for x in args.primary:
+        if os.path.exists(x):
+            l1.extend(numbersFromFile(open(x, 'r')))
+        else:
+            l1.append(x)
+    l1 = numpy.array([float(x) for x in l1 if isFloat(x)])
 
 if len(l1) == 0:
     raise Exception("Could not parse any numbers")
@@ -110,7 +123,13 @@ if args.debug:
     print(f'[DEBUG][L1] {l1}')
 
 if len(args.secondary) > 0:
-    l2 = numpy.array([float(x) for x in args.secondary if isFloat(x)])
+    l2 = []
+    for x in args.secondary:
+        if os.path.exists(x):
+            l2.extend(numbersFromFile(open(x, 'r')))
+        else:
+            l2.append(x)
+    l2 = numpy.array([float(x) for x in l2 if isFloat(x)])
     if args.debug:
         print(f'[DEBUG][L2] {l2}')
 

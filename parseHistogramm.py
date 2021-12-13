@@ -50,7 +50,6 @@ def isSliceType(value, translator=defaultSliceTypeTranslator):
 parser = argparse.ArgumentParser(description="Expand compressed histogramm notation")
 parser.add_argument("input", nargs="?", help="compressed histogramm csv")
 parser.add_argument("--slice", type=SliceType(), default=SliceType()('1:'), help="slice histogram (default '1:')",)
-parser.add_argument("--to-column", type=int, default=1, help="start parsing histogram data from column (default %(default)s)",)
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
 parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=False)
 parser.add_argument("--items", nargs="*", help="select items", default=False)

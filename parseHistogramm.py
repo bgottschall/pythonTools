@@ -51,7 +51,7 @@ parser = argparse.ArgumentParser(description="Expand compressed histogramm notat
 parser.add_argument("input", nargs="?", help="compressed histogramm csv")
 parser.add_argument("--slice", type=SliceType(), default=SliceType()('1:'), help="slice histogram (default '1:')",)
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
-parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=False)
+parser.add_argument("--flatten", choices=['buckets', 'counts', 'items', 'items+buckets', 'items+counts'], help="output flat histogramm", default=False)
 parser.add_argument("--items", nargs="*", help="select items", default=False)
 parser.add_argument("--buckets", nargs="*", help="select buckets", default=False)
 parser.add_argument("-o", "--output", help="output file (default stdout)", default=None)
@@ -88,7 +88,7 @@ selector = None
 if args.buckets:
     selector = [0] + [i for i, x in enumerate(header) if i > 0 and x in args.buckets]
 
-if args.flatten == 'buckets' and not all(isFloat(x) for x in header[args.slice]):
+if (args.flatten == 'buckets' or args.flatten == 'items+buckets') and not all(isFloat(x) for x in header[args.slice]):
     raise Exception('Flatten buckets only works with numeric header')
 
 hasItems = 0 not in (args.slice.indices(1) if isinstance(args.slice, slice) else [args.slice])
@@ -100,8 +100,48 @@ if not args.flatten or args.flatten == 'items':
 else:
     outputFile.write(args.delimiter.join([header[0] if hasItems else '', args.flatten]) + '\n')
 
-flatHist = [0] * (len(header) - 1)
+flatHist = [0] * (len(header[args.slice]) - 1)
+flatFlat = 0
 
+
+def parseNormal(line):
+    outputFile.write(args.delimiter.join([line[0] if hasItems else str(i)] + line[args.slice]) + '\n')
+
+
+def parseCounts(line):
+    outputFile.write(args.delimiter.join([line[0] if hasItems else str(i), str(sum([float(i) for i in line[args.slice] if len(i) > 0]))]) + '\n')
+
+
+def parseBuckets(line):
+    outputFile.write(args.delimiter.join([line[0] if hasItems else str(i), str(sum([float(h) * float(i) for (h, i) in zip(header[args.slice], line[args.slice]) if len(i) > 0]))]) + '\n')
+
+
+def parseItems(line):
+    global flatHist
+    flatHist = [(p + float(v) if len(v) > 0 else p) for (p, v) in zip(flatHist, line[args.slice])]
+
+
+def parseItemsCounts(line):
+    global flatFlat
+    flatFlat += sum([float(i) for i in line[args.slice] if len(i) > 0])
+
+
+def parseItemsBuckets(line):
+    global flatFlat
+    flatFlat += sum([float(h) * float(i) for (h, i) in zip(header[args.slice], line[args.slice]) if len(i) > 0])
+
+
+parser = parseNormal
+if args.flatten == "counts":
+    parser = parseCounts
+elif args.flatten == "buckets":
+    parser = parseBuckets
+elif args.flatten == "items":
+    parser = parseItems
+elif args.flatten == 'items+counts':
+    parser = parseItemsCounts
+elif args.flatten == 'items+buckets':
+    parser = parseItemsBuckets
 
 for i, line in enumerate(csvFile):
     if line[0].startswith('#'):
@@ -114,17 +154,14 @@ for i, line in enumerate(csvFile):
     if selector is not None:
         line = [line[i] for i in selector]
 
-    if not args.flatten:
-        outputFile.write(args.delimiter.join([line[0] if hasItems else str(i)] + line[args.slice]) + '\n')
-    elif args.flatten == "counts":
-        outputFile.write(args.delimiter.join([line[0] if hasItems else str(i), str(sum([float(i) for i in line[args.slice] if len(i) > 0]))]) + '\n')
-    elif args.flatten == "buckets":
-        outputFile.write(args.delimiter.join([line[0] if hasItems else str(i), str(sum([float(h) * float(i) for (h, i) in zip(header[args.slice], line[args.slice]) if len(i) > 0]))]) + '\n')
-    elif args.flatten == "items":
-        flatHist = [(p + float(v) if len(v) > 0 else p) for (p, v) in zip(flatHist, line[args.slice])]
+    parser(line)
 
 if args.flatten == "items":
     outputFile.write(args.delimiter.join(["items"] + [str(f) for f in flatHist]) + '\n')
+elif args.flatten == 'items+counts':
+    outputFile.write(args.delimiter.join(["counts"] + [str(flatFlat)]) + '\n')
+elif args.flatten == 'items+buckets':
+    outputFile.write(args.delimiter.join(["buckets"] + [str(flatFlat)]) + '\n')
 
 if (args.output):
     outputFile.close()

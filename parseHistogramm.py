@@ -49,9 +49,12 @@ def isSliceType(value, translator=defaultSliceTypeTranslator):
 
 parser = argparse.ArgumentParser(description="Expand compressed histogramm notation")
 parser.add_argument("input", nargs="?", help="compressed histogramm csv")
+parser.add_argument("--filter-columns", default=[], type=SliceType(), nargs='*', help='filter based on these columns')
+parser.add_argument("--filter-mode", choices=['any', 'all'], default='any', help='either a value must match in any of the columns of all columns must contain a filter value')
+parser.add_argument("--filter-data", default=[], type=str, nargs='*', help='filter based on this data')
 parser.add_argument("--slice", type=SliceType(), default=SliceType()('1:'), help="slice histogram (default '1:')",)
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
-parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=None, nargs="*")
+parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=[], nargs="*")
 parser.add_argument("--items", nargs="*", help="select items", default=False)
 parser.add_argument("--buckets", nargs="*", help="select buckets", default=False)
 parser.add_argument("-o", "--output", help="output file (default stdout)", default=None)
@@ -62,6 +65,9 @@ if args.input and not os.path.exists(args.input):
     print("ERROR: csv input file not found!")
     parser.print_help()
     sys.exit(1)
+
+if (len(args.filter_columns) > 0 and len(args.filter_data) == 0) or (len(args.filter_columns) == 0 and len(args.filter_data) > 0):
+    raise Exception('Filtering requires --filter-columns and --filter-data!')
 
 if not args.input:
     try:
@@ -80,6 +86,7 @@ for header in csvFile:
         continue
     break
 
+
 if header is None:
     raise Exception('Could not find a histogram header!')
 
@@ -88,14 +95,14 @@ selector = None
 if args.buckets:
     selector = [0] + [i for i, x in enumerate(header) if i > 0 and x in args.buckets]
 
-if (args.flatten == 'buckets' or args.flatten == 'items+buckets') and not all(isFloat(x) for x in header[args.slice]):
+if 'buckets' in args.flatten and not all(isFloat(x) for x in header[args.slice]):
     raise Exception('Flatten buckets only works with numeric header')
 
 hasItems = 0 not in (args.slice.indices(1) if isinstance(args.slice, slice) else [args.slice])
 
 outputFile = sys.stdout if not args.output else xopen.xopen(args.output, 'w')
 
-if args.flatten is not None and 'items' in args.flatten and not any(x in args.flatten for x in ['buckets', 'counts']):
+if len(args.flatten) == 0 or 'items' in args.flatten and not any(x in args.flatten for x in ['buckets', 'counts']):
     outputFile.write(args.delimiter.join([header[0] if hasItems else ''] + header[args.slice]) + '\n')
 else:
     outputFile.write(args.delimiter.join([header[0] if hasItems else ''] + [x for x in ['counts', 'buckets'] if x in args.flatten]) + '\n')
@@ -163,12 +170,20 @@ else:
     else:
         parser = parseNormal
 
+
+applyFilter = len(args.filter_columns) > 0
+filterSlices = [s if isinstance(s, slice) else slice(s, s + 1) for s in args.filter_columns]
+filterFunc = any if args.filter_mode == 'any' else all
+
 for i, line in enumerate(csvFile):
     if line[0].startswith('#'):
         continue
     if len(line) < 2:
         continue
     if args.items and line[0] not in args.items:
+        continue
+
+    if applyFilter and not filterFunc(v in args.filter_data for lv in [line[slc] for slc in filterSlices] for v in lv):
         continue
 
     if selector is not None:

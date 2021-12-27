@@ -13,8 +13,10 @@ F_GETPIPE_SZ = 1032 if not hasattr(fcntl, "F_GETPIPE_SZ") else fcntl.F_GETPIPE_S
 
 parser = argparse.ArgumentParser(description="Expand compressed histogramm notation")
 parser.add_argument("input", nargs="?", help="compressed histogramm csv")
+parser.add_argument("-c", "--column", help="parse this column (default %(default)s)", type=int, default=1)
 parser.add_argument("-vd", "--value-delimiter", help="histogramm delimiter between category and value (default '%(default)s')", default='/')
 parser.add_argument("-bd", "--bucket-delimiter", help="histogramm delimiter between category and value (default '%(default)s')", default=':')
+parser.add_argument("--prebins", type=str, help="parse each line with prepared bins", default=None, nargs='*')
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
 parser.add_argument("--flatten", action="store_true", help="output flat histogramm", default=False)
 parser.add_argument("--no-header", action="store_true", help="input file does not contain a header", default=False)
@@ -27,6 +29,27 @@ if args.input and not os.path.exists(args.input):
     parser.print_help()
     sys.exit(1)
 
+if args.column < 0:
+    print("ERROR: process column cannot be negative!")
+    parser.print_help()
+    sys.exit(1)
+
+if args.prebins is not None:
+    preBins = []
+    for x in args.prebins:
+        if x.isnumeric():
+            preBins.append(x)
+        else:
+            try:
+                p = [int(t) if t else None for t in x.split(':')]
+                p[1] += 1
+                preBins.extend(range(int(p[1]))[slice(*p)])
+            except Exception:
+                raise Exception(f"Could not parse prebin {x}")
+    args.prebins = [str(k) for k in preBins]
+    del preBins
+
+
 if not args.input:
     try:
         fcntl.fcntl(sys.stdin.fileno(), F_SETPIPE_SZ, int(open("/proc/sys/fs/pipe-max-size", 'r').read()))
@@ -38,51 +61,82 @@ else:
 
 csvFile = csv.reader(fInput, delimiter=args.delimiter)
 
-entryColumn = ""
-
+inputHeader = None
 if not args.no_header:
     for header in csvFile:
         if header[0].startswith('#'):
             continue
-        entryColumn = header[0]
+        inputHeader = header
         break
 
+if not args.no_header and inputHeader is None:
+    raise Exception("Could not find header row")
+
+if args.flatten:
+    inputHeader = []
+
+outputFile = None
+dictWriter = None
 fullHist = []
-flatHist = collections.Counter()
-seenIndex = {}
+flatHist = collections.Counter() if args.prebins is None else collections.Counter({k: 0 for k in args.prebins})
+
+if args.prebins is not None:
+    outputFile = sys.stdout if not args.output else xopen.xopen(args.output, 'w')
+
+    header = list(flatHist.keys())
+    if all(x.isdigit() for x in header):
+        header.sort(key=int)
+    header = inputHeader[:args.column] + header + inputHeader[args.column + 1:]
+
+    dictWriter = csv.DictWriter(outputFile, delimiter=args.delimiter, fieldnames=header, extrasaction='ignore')
+
+    if not args.no_header:
+        dictWriter.writeheader()
 
 for line in csvFile:
     if line[0].startswith('#'):
         continue
-    if len(line) < 2:
-        continue
+    if inputHeader is None:
+        inputHeader = list(range(len(line)))
 
-    values = {k: int(v) for k, v in (x.split(args.bucket_delimiter) for x in line[1].split(args.value_delimiter))}
+    values = {k: int(v) for k, v in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if args.prebins is None or k in args.prebins}
+
     flatHist.update(values)
+
     if not args.flatten:
-        if line[0] in seenIndex:
-            prevValues = fullHist[seenIndex[line[0]]]
-            del prevValues[entryColumn]
-            fullHist[seenIndex[line[0]]] = {entryColumn: line[0], **(collections.Counter(prevValues) + collections.Counter(values))}
+        outDict = {
+            **{k: v for k, v in zip(inputHeader[:args.column], line[:args.column])},
+            **values,
+            **{k: v for k, v in zip(inputHeader[args.column + 1:], line[args.column + 1:])}
+        }
+        if args.prebins is not None:
+            dictWriter.writerow(outDict)
         else:
-            fullHist.append({entryColumn: line[0], **values})
-            seenIndex[line[0]] = len(fullHist) - 1
+            fullHist.append(outDict)
 
-outputFile = sys.stdout if not args.output else xopen.xopen(args.output, 'w')
+if dictWriter is None:
+    outputFile = outputFile if outputFile is not None else sys.stdout if not args.output else xopen.xopen(args.output, 'w')
 
-header = list(flatHist)
-if all(x.isdigit() for x in header):
-    header.sort(key=int)
+    header = list(flatHist.keys())
+    if all(x.isdigit() for x in header):
+        header.sort(key=int)
+    header = inputHeader[:args.column] + header + inputHeader[args.column + 1:]
 
-header = [entryColumn] + header
+    dictWriter = csv.DictWriter(outputFile, delimiter=args.delimiter, fieldnames=header, extrasaction='ignore')
 
-dictWriter = csv.DictWriter(outputFile, delimiter=args.delimiter, fieldnames=header, extrasaction='ignore')
-dictWriter.writeheader()
+if args.prebins is None:
+    if not args.no_header:
+        dictWriter.writeheader()
+    if not args.flatten:
+        dictWriter.writerows(fullHist)
 
 if args.flatten:
-    dictWriter.writerow({entryColumn: 'flat', **flatHist})
-else:
-    dictWriter.writerows(fullHist)
+    outDict = {
+        **{k: v for k, v in zip(inputHeader[:args.column], line[:args.column])},
+        **flatHist,
+        **{k: v for k, v in zip(inputHeader[args.column + 1:], line[args.column + 1:])}
+    }
+    dictWriter.writerow(outDict)
 
-if (args.output):
+if outputFile is not None and args.output:
     outputFile.close()

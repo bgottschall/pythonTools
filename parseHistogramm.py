@@ -55,8 +55,8 @@ parser.add_argument("--filter-data", default=[], type=str, nargs='*', help='filt
 parser.add_argument("--slice", type=str, default='1:', help="slice histogram (default '1:')",)
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
 parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=[], nargs="*")
-parser.add_argument("--items", nargs="*", help="select items", default=False)
-parser.add_argument("--buckets", nargs="*", help="select buckets", default=False)
+parser.add_argument("--item-columns", nargs="*", help="set item column (default %(default)s)", default=None)
+parser.add_argument("--select-buckets", nargs="*", help="select buckets", default=False)
 parser.add_argument("-o", "--output", help="output file (default stdout)", default=None)
 
 args = parser.parse_args()
@@ -68,6 +68,18 @@ if args.input and not os.path.exists(args.input):
 
 if (len(args.filter_columns) > 0 and len(args.filter_data) == 0) or (len(args.filter_columns) == 0 and len(args.filter_data) > 0):
     raise Exception('Filtering requires --filter-columns and --filter-data!')
+
+if args.item_columns is not None:
+    itemColumns = []
+    for x in args.item_columns:
+        if x.isnumeric():
+            itemColumns.append(slice(int(x), int(x) + 1))
+        else:
+            x = [int(y) if y.isnumeric() else None for y in x.split(':')]
+            if len(x) > 3 or all(y is None for y in x):
+                raise Exception('invalid item columns parameter')
+            itemColumns.append(slice(*x))
+    args.item_columns = itemColumns
 
 if args.slice.isnumeric():
     args.slice = [int(args.slice), int(args.slice) + 1]
@@ -101,19 +113,15 @@ args.slice[1] = args.slice[1] if args.slice[1] is not None else len(header)
 if args.slice[0] == args.slice[1]:
     raise Exception('Invalid histogram slice range')
 
-hasItems = args.slice[0] > 0
-
-if args.items and not hasItems:
-    raise Exception('Cannot select items when histogram slice starts at 0')
-
-
+itemsHeader = None if args.item_columns is None else [x for sx in [header[s] for s in args.item_columns] for x in sx]
+print(itemsHeader)
 if 'buckets' in args.flatten and not all(isFloat(x) for x in header[slice(*args.slice)]):
     raise Exception('Flatten buckets only works with numeric header')
 
 
 selector = None
-if args.buckets:
-    selector = [i for i, x in enumerate(header[slice(*args.slice)]) if x in args.buckets]
+if args.select_buckets:
+    selector = [i for i, x in enumerate(header[slice(*args.slice)]) if x in args.select_buckets]
 
 outputFile = sys.stdout if not args.output else xopen.xopen(args.output, 'w')
 
@@ -122,52 +130,57 @@ if len(args.flatten) == 0:
 elif 'items' not in args.flatten and any(x in args.flatten for x in ['counts', 'buckets']):
     outputFile.write(args.delimiter.join(header[:args.slice[0]] + [x for x in ['counts', 'buckets'] if x in args.flatten]) + '\n')
 elif 'items' in args.flatten and any(x in args.flatten for x in ['counts', 'buckets']):
-    outputFile.write(args.delimiter.join([header[0] if hasItems else ''] + [x for x in ['counts', 'buckets'] if x in args.flatten]) + '\n')
+    outputFile.write(args.delimiter.join(((itemsHeader if itemsHeader is not None else ['all']) + [x for x in ['counts', 'buckets'] if x in args.flatten])) + '\n')
 else:
-    outputFile.write(args.delimiter.join([header[0] if hasItems else ''] + header[slice(*args.slice)]) + '\n')
+    outputFile.write(args.delimiter.join((itemsHeader if itemsHeader is not None else ['all']) + header[slice(*args.slice)]) + '\n')
 
-flatHist = [0] * len(header[slice(*args.slice)])
-flat = {
-    'buckets': 0,
-    'counts': 0
-}
+flatHist = {}
+flat = {}
 
 
-def parseNormal(line, itemHeaders, itemValues):
+def parseNormal(line, itemIndex, itemHeaders, itemValues):
     outputFile.write(args.delimiter.join(line[:args.slice[0]] + itemValues + line[args.slice[1]:]) + '\n')
 
 
-def parseCounts(line, itemHeaders, itemValues):
+def parseCounts(line, itemIndex, itemHeaders, itemValues):
     outputFile.write(args.delimiter.join(line[:args.slice[0]] + [str(sum([float(i) for i in itemValues if len(i) > 0]))] + line[args.slice[1]:]) + '\n')
 
 
-def parseBuckets(line, itemHeaders, itemValues):
+def parseBuckets(line, itemIndex, itemHeaders, itemValues):
     outputFile.write(args.delimiter.join(line[:args.slice[0]] + [str(sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0]))] + line[args.slice[1]:]) + '\n')
 
 
-def parseCountsBuckets(line, itemHeaders, itemValues):
+def parseCountsBuckets(line, itemIndex, itemHeaders, itemValues):
     outputFile.write(args.delimiter.join(line[:args.slice[0]] + [str(sum([float(i) for i in itemValues if len(i) > 0])), str(sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0]))] + line[args.slice[1]:]) + '\n')
 
 
-def parseItems(line, itemHeaders, itemValues):
+def parseItems(line, itemIndex, itemHeaders, itemValues):
     global flatHist
-    flatHist = [(p + float(v) if len(v) > 0 else p) for (p, v) in zip(flatHist, itemValues)]
+    if itemIndex not in flatHist:
+        flatHist[itemIndex] = [0] * len(itemValues)
+    flatHist[itemIndex] = [(p + float(v) if len(v) > 0 else p) for (p, v) in zip(flatHist[itemIndex], itemValues)]
 
 
-def parseItemsBuckets(line, itemHeaders, itemValues):
+def parseItemsBuckets(line, itemIndex, itemHeaders, itemValues):
     global flat
-    flat['buckets'] += sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0])
+    if itemIndex not in flat:
+        flat[itemIndex] = {'counts': 0, 'buckets': 0}
+    flat[itemIndex]['buckets'] += sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0])
 
 
-def parseItemsCounts(line, itemHeaders, itemValues):
+def parseItemsCounts(line, itemIndex, itemHeaders, itemValues):
     global flat
-    flat['counts'] += sum([float(i) for i in itemValues if len(i) > 0])
+    if itemIndex not in flat:
+        flat[itemIndex] = {'counts': 0, 'buckets': 0}
+    flat[itemIndex]['counts'] += sum([float(i) for i in itemValues if len(i) > 0])
 
 
-def parseItemsCountsBuckets(line, itemHeaders, itemValues):
+def parseItemsCountsBuckets(line, itemIndex, itemHeaders, itemValues):
     global flat
-    flat['counts'] += sum([float(i) for i in itemValues if len(i) > 0])
-    flat['buckets'] += sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0])
+    if itemIndex not in flat:
+        flat[itemIndex] = {'counts': 0, 'buckets': 0}
+    flat[itemIndex]['counts'] += sum([float(i) for i in itemValues if len(i) > 0])
+    flat[itemIndex]['buckets'] += sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0])
 
 
 if 'items' in args.flatten:
@@ -202,8 +215,6 @@ for i, line in enumerate(csvFile):
         continue
     if len(line) < 2:
         continue
-    if args.items and line[0] not in args.items:
-        continue
 
     if applyFilter and not filterFunc(v in args.filter_data for lv in [line[slc] for slc in filterSlices] for v in lv):
         continue
@@ -212,18 +223,24 @@ for i, line in enumerate(csvFile):
     if selector is not None:
         itemValues = [itemValues[i] for i in selector]
 
-    parser(line, itemHeaders, itemValues)
+    itemsIndex = 'all' if args.item_columns is None else args.delimiter.join([x for sx in [line[s] for s in args.item_columns] for x in sx])
+
+    parser(line, itemsIndex, itemHeaders, itemValues)
 
 if 'items' in args.flatten:
     if not any(x in args.flatten for x in ['counts', 'buckets']):
-        outputFile.write(args.delimiter.join(["items"] + [str(f) for f in flatHist]) + '\n')
+        for itemIndex, itemFlat in flatHist.items():
+            outputFile.write(args.delimiter.join([itemIndex] + [str(f) for f in itemFlat]) + '\n')
     else:
         if all(x in args.flatten for x in ['counts', 'buckets']):
-            outputFile.write(args.delimiter.join(["items", str(flat['counts']), str(flat['buckets'])]) + '\n')
+            for itemIndex, itemFlat in flat.items():
+                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['counts']), str(itemFlat['buckets'])]) + '\n')
         elif 'counts' in args.flatten:
-            outputFile.write(args.delimiter.join(["items", str(flat['counts'])]) + '\n')
+            for itemIndex, itemFlat in flat.items():
+                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['counts'])]) + '\n')
         else:
-            outputFile.write(args.delimiter.join(["items", str(flat['buckets'])]) + '\n')
+            for itemIndex, itemFlat in flat.items():
+                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['buckets'])]) + '\n')
 
 if (args.output):
     outputFile.close()

@@ -114,7 +114,6 @@ if args.slice[0] == args.slice[1]:
     raise Exception('Invalid histogram slice range')
 
 itemsHeader = None if args.item_columns is None else [x for sx in [header[s] for s in args.item_columns] for x in sx]
-print(itemsHeader)
 if 'buckets' in args.flatten and not all(isFloat(x) for x in header[slice(*args.slice)]):
     raise Exception('Flatten buckets only works with numeric header')
 

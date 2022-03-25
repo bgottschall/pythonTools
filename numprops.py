@@ -20,18 +20,26 @@ def isFloat(val):
         return False
 
 
-def numbersFromFile(filefd):
+def numbersFromFile(filefd, delimiters=[]):
     nset = []
     for line in filefd.readlines():
-        nset.extend(line.split())
-    return numpy.array([float(x) for x in nset if isFloat(x)])
+        nset.extend(numbersFromStrings(line, delimiters))
+    return nset
 
 
-def numbersFromStdIn():
+def numbersFromStdIn(delimiters=[]):
     import sys
-    return numbersFromFile(sys.stdin)
+    return numbersFromFile(sys.stdin, delimiters)
 
-    
+
+def numbersFromStrings(data, delimiters=[]):
+    if not isinstance(data, list):
+        data = [data]
+    gendata = (x for x in data)
+    if len(delimiters) > 0:
+        gendata = (x for sl in (re.split('|'.join([re.escape(x) for x in delimiters]), d) for d in data) for x in sl)
+    return numpy.array([float(x) for x in gendata if isFloat(x)])
+
 
 quiet = False
 formatter = '{:}'
@@ -72,9 +80,9 @@ props = {
     'avg':        {'label': 'Avg',        'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.mean(l1)},
     'std':        {'label': 'σ',          'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.std(l1)},
     'var':        {'label': 'σ²',         'secondary': False, 'argument': False, 'func': lambda l1, l2, arg: numpy.var(l1)},
-    'pvalue':     {'label': 'P-Value',    'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.ttest_ind(l1, l2, equal_var=False)[1]},
-    'spearmanr':  {'label': 'SpearmanR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.spearmanr(l1, l2)[0]},
-    'pearsonr':   {'label': 'PearsonR',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: stats.pearsonr(l1, l2)[0]},
+    'pvalue':     {'label': 'P-Value',    'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: numpy.nan if any(len(x) < 2 for x in [l1, l2]) else stats.ttest_ind(l1, l2, equal_var=False)[1]},
+    'spearmanr':  {'label': 'SpearmanR',  'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: numpy.nan if any(len(x) < 2 for x in [l1, l2]) else stats.spearmanr(l1, l2)[0]},
+    'pearsonr':   {'label': 'PearsonR',   'secondary': True,  'argument': False, 'func': lambda l1, l2, arg: numpy.nan if any(len(x) < 2 for x in [l1, l2]) else stats.pearsonr(l1, l2)[0]},
     'polyfit%d':  {'label': 'PolyFit%D',  'secondary': True,  'argument': True,  'func': polyfitProp}
 }
 
@@ -86,6 +94,7 @@ parser.add_argument("--precision", help="force a specific precision", type=int, 
 parser.add_argument("-p", "--properties", help=f"format output (default {', '.join(defaultProps)}) (valid {', '.join(list(props.keys())).replace('%','%%')})", type=str.lower, nargs="+", default=defaultProps)
 parser.add_argument("-q", "--quiet", help="minimal output", default=False, action="store_true")
 parser.add_argument("--secondary", help="secondary number set used e.g. to calculate p-value statistics", default=[], nargs='*')
+parser.add_argument("--delimiters", default=[' '], nargs='*', help="split input data using these delimiters (default ' ')")
 parser.add_argument("--debug", help="turn on debug output", action="store_true")
 parser.add_argument("primary", help="numbers to calculate properties on (default read from stdin)", default=[], nargs='*')
 args = parser.parse_args()
@@ -105,16 +114,15 @@ if args.precision is not None and args.precision < 0:
 if len(args.primary) == 0:
     if args.debug:
         print('[DEBUG] no primary number set given, reading from stdin')
-    l1 = numbersFromStdIn()
+    l1 = numbersFromStdIn(args.delimiters)
     stdinConsumed = True
 else:
     l1 = []
     for x in args.primary:
         if os.path.exists(x):
-            l1.extend(numbersFromFile(open(x, 'r')))
+            l1.extend(numbersFromFile(open(x, 'r'), args.delimiters))
         else:
-            l1.append(x)
-    l1 = numpy.array([float(x) for x in l1 if isFloat(x)])
+            l1.extend(numbersFromStrings(x, args.delimiters))
 
 if len(l1) == 0:
     raise Exception("Could not parse any numbers")
@@ -126,10 +134,9 @@ if len(args.secondary) > 0:
     l2 = []
     for x in args.secondary:
         if os.path.exists(x):
-            l2.extend(numbersFromFile(open(x, 'r')))
+            l2.extend(numbersFromFile(open(x, 'r'), args.delimiters))
         else:
-            l2.append(x)
-    l2 = numpy.array([float(x) for x in l2 if isFloat(x)])
+            l2.extend(numbersFromStrings(x, args.delimiters))
     if args.debug:
         print(f'[DEBUG][L2] {l2}')
 
@@ -163,7 +170,7 @@ for p in args.properties:
             raise Exception(f"Property '{p}' requires a secondary number set, provided via stdin or --secondary")
         if args.debug:
             print('[DEBUG] no secondary number set given, reading from stdin')
-        l2 = numbersFromStdIn()
+        l2 = numbersFromStdIn(args.delimiters)
         if args.debug:
             print(f'[DEBUG][L2] {l2}')
 
@@ -181,7 +188,7 @@ for p in args.properties:
     if args.debug:
         print(f'[DEBUG][{p}] {results[-1]}')
 
-results = [formatter.format(x) if isFloat(x) else x for x in results]
+results = [formatter.format(x) if isFloat(x) or numpy.isnan(x) else x for x in results]
 
 if args.quiet:
     print(' '.join(results))

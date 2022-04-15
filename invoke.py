@@ -321,7 +321,13 @@ globalVarEnvironment = tempDict
 
 
 if args.compile:
-    shellScript = '#!/bin/sh\n\n'
+    shellScript = '#!/bin/sh\n'
+    shellScript += '\n'
+    shellScript += 'PWDPATH="$(pwd -P)"\n'
+    shellScript += 'SCRIPTPATH="$( cd -- "$(dirname "$0")" >/dev/null 2>&1 ; pwd -P )"\n'
+    shellScript += '\n'
+    shellScript += '[ "$PWDPATH" != "$SCRIPTPATH" ] && cd "$SCRIPTPATH"\n'
+    shellScript += '\n'
 
 if args.compile and len(globalEnvironment) > 0:
     shellScript += 'export '

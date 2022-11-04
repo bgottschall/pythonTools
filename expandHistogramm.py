@@ -99,7 +99,7 @@ for line in csvFile:
     if inputHeader is None:
         inputHeader = list(range(len(line)))
 
-    values = {k: int(v) for k, v in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if args.prebins is None or k in args.prebins}
+    values = {k: float(v) for k, v in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if args.prebins is None or k in args.prebins}
 
     flatHist.update(values)
 

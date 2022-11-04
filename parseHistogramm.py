@@ -57,6 +57,7 @@ parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')",
 parser.add_argument("--flatten", choices=['buckets', 'counts', 'items'], help="output flat histogramm", default=[], nargs="*")
 parser.add_argument("--item-columns", nargs="*", help="set item column (default %(default)s)", default=None)
 parser.add_argument("--select-buckets", nargs="*", help="select buckets", default=False)
+parser.add_argument("--sorted-input", action="store_true", help="optimize for a sorted input", default=False)
 parser.add_argument("-o", "--output", help="output file (default stdout)", default=None)
 
 args = parser.parse_args()
@@ -182,6 +183,20 @@ def parseItemsCountsBuckets(line, itemIndex, itemHeaders, itemValues):
     flat[itemIndex]['buckets'] += sum([float(h) * float(i) for (h, i) in zip(itemHeaders, itemValues) if len(i) > 0])
 
 
+def outputFlatHist(flush = True):
+    global flatHist
+    for itemIndex, itemFlat in flatHist.items():
+        outputFile.write(args.delimiter.join([itemIndex] + [str(f) for f in itemFlat]) + '\n')
+    if flush:
+        flatHist = {}
+
+def outputFlat(flush = True):
+    global flat
+    for itemIndex, itemFlat in flat.items():
+        outputFile.write(args.delimiter.join([itemIndex] + [str(itemFlat[x]) for x in ['counts', 'buckets'] if x in args.flatten]) + '\n')
+    if flush:
+        flat = {}
+
 if 'items' in args.flatten:
     if all(x in args.flatten for x in ['counts', 'buckets']):
         parser = parseItemsCountsBuckets
@@ -209,6 +224,12 @@ itemHeaders = header[slice(*args.slice)]
 if selector is not None:
     itemHeaders = [itemHeaders[i] for i in selector]
 
+lastItemIndex = None
+optFlatItems = 'items' in args.flatten and args.sorted_input and args.item_columns is not None and all(x == y for (x, y) in zip(itemsHeader, header[:len(itemsHeader)]))
+
+flatOutputFunc = outputFlatHist if not any(x in args.flatten for x in ['counts', 'buckets']) else outputFlat
+
+
 for i, line in enumerate(csvFile):
     if line[0].startswith('#'):
         continue
@@ -224,22 +245,17 @@ for i, line in enumerate(csvFile):
 
     itemsIndex = 'all' if args.item_columns is None else args.delimiter.join([x for sx in [line[s] for s in args.item_columns] for x in sx])
 
+    if optFlatItems and itemsIndex != lastItemIndex:
+        flatOutputFunc()
+        lastItemIndex = itemsIndex
+
     parser(line, itemsIndex, itemHeaders, itemValues)
 
+
+    
+
 if 'items' in args.flatten:
-    if not any(x in args.flatten for x in ['counts', 'buckets']):
-        for itemIndex, itemFlat in flatHist.items():
-            outputFile.write(args.delimiter.join([itemIndex] + [str(f) for f in itemFlat]) + '\n')
-    else:
-        if all(x in args.flatten for x in ['counts', 'buckets']):
-            for itemIndex, itemFlat in flat.items():
-                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['counts']), str(itemFlat['buckets'])]) + '\n')
-        elif 'counts' in args.flatten:
-            for itemIndex, itemFlat in flat.items():
-                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['counts'])]) + '\n')
-        else:
-            for itemIndex, itemFlat in flat.items():
-                outputFile.write(args.delimiter.join([itemIndex, str(itemFlat['buckets'])]) + '\n')
+    flatOutputFunc()
 
 if (args.output):
     outputFile.close()

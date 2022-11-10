@@ -6,6 +6,9 @@ import sys
 import os
 import xopen
 import collections
+import functools
+import itertools
+import operator
 import fcntl
 
 F_SETPIPE_SZ = 1031 if not hasattr(fcntl, "F_SETPIPE_SZ") else fcntl.F_SETPIPE_SZ
@@ -17,6 +20,7 @@ parser.add_argument("-c", "--column", help="parse this column (default %(default
 parser.add_argument("-vd", "--value-delimiter", help="histogramm delimiter between category and value (default '%(default)s')", default='/')
 parser.add_argument("-bd", "--bucket-delimiter", help="histogramm delimiter between category and value (default '%(default)s')", default=':')
 parser.add_argument("--prebins", type=str, help="parse each line with prepared bins", default=None, nargs='*')
+parser.add_argument("--force-prebins", default=False, action="store_true", help="force prebins instead of failing")
 parser.add_argument("--delimiter", help="csv delimiter (default '%(default)s')", default=';')
 parser.add_argument("--flatten", action="store_true", help="output flat histogramm", default=False)
 parser.add_argument("--no-header", action="store_true", help="input file does not contain a header", default=False)
@@ -99,7 +103,11 @@ for line in csvFile:
     if inputHeader is None:
         inputHeader = list(range(len(line)))
 
-    values = {k: float(v) for k, v in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if args.prebins is None or k in args.prebins}
+    if args.prebins is not None and not args.force_prebins and any(False if k in args.prebins else True for k, _ in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter))):
+      invalidBins = [k for k, _ in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if k not in args.prebins]
+      raise Exception(f'ERROR: input data contained bins {invalidBins} which were not provided over the prebins')
+
+    values = functools.reduce(lambda a, b: a + collections.Counter(b), ({k: float(v)} for k, v in (x.split(args.bucket_delimiter) for x in line[args.column].split(args.value_delimiter)) if args.prebins is None or k in args.prebins), collections.Counter())
 
     flatHist.update(values)
 

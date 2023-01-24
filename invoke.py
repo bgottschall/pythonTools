@@ -9,7 +9,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-invokePyVersion = '0.1'
+invokePyVersion = '0.2'
 
 treatAsDirectories = ['outputs', 'output', 'outdir', 'dir']
 

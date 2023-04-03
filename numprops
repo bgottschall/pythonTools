@@ -19,6 +19,14 @@ def isFloat(val):
     except ValueError:
         return False
 
+def isNaN(val):
+    if val is None:
+        return True
+    try:
+        ret = numpy.isnan(val)
+        return ret
+    except TypeError:
+        return False
 
 def numbersFromFile(filefd, delimiters=[]):
     nset = []
@@ -188,7 +196,7 @@ for p in args.properties:
     if args.debug:
         print(f'[DEBUG][{p}] {results[-1]}')
 
-results = [formatter.format(x) if isFloat(x) or numpy.isnan(x) else x for x in results]
+results = ['NaN' if isNaN(x) else formatter.format(x) if isFloat(x) else x for x in results]
 
 if args.quiet:
     print(' '.join(results))
